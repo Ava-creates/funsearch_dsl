@@ -16,25 +16,39 @@
 """A single-threaded implementation of the FunSearch pipeline."""
 from collections.abc import Sequence
 from typing import Any
+import textwrap
+from funsearch_dsl.implementation import code_manipulation
+from funsearch_dsl.implementation import config as config_lib
+from funsearch_dsl.implementation import evaluator
+from funsearch_dsl.implementation import programs_database
+from funsearch_dsl.implementation import sampler
 
-from funsearch.implementation import code_manipulation
-from funsearch.implementation import config as config_lib
-from funsearch.implementation import evaluator
-from funsearch.implementation import programs_database
-from funsearch.implementation import sampler
+
+
+# def evolve(func):
+#     def wrapper(*args, **kwargs):
+#         print("Running decorated function...")
+#         return func(*args, **kwargs)
+#     return wrapper
+# def run(func):
+#     return func
+
+# def evolve(func):
+#     return func
+
 
 
 def _extract_function_names(specification: str) -> tuple[str, str]:
   """Returns the name of the function to evolve and of the function to run."""
-  run_functions = list(
-      code_manipulation.yield_decorated(specification, 'funsearch', 'run'))
-  if len(run_functions) != 1:
-    raise ValueError('Expected 1 function decorated with `@funsearch.run`.')
-  evolve_functions = list(
-      code_manipulation.yield_decorated(specification, 'funsearch', 'evolve'))
-  if len(evolve_functions) != 1:
-    raise ValueError('Expected 1 function decorated with `@funsearch.evolve`.')
-  return evolve_functions[0], run_functions[0]
+  # run_functions = list(
+  #     code_manipulation.yield_decorated(specification, 'funsearch', 'run'))
+  # if len(run_functions) != 1:
+  #   raise ValueError('Expected 1 function decorated with `@funsearch.run`.')
+  # evolve_functions = list(
+  #     code_manipulation.yield_decorated(specification, 'funsearch', 'evolve'))
+  # if len(evolve_functions) != 1:
+  #   raise ValueError('Expected 1 function decorated with `@funsearch.evolve`.')
+  return  "priority","evaluate"
 
 
 def main(specification: str, inputs: Sequence[Any], config: config_lib.Config):
@@ -42,6 +56,8 @@ def main(specification: str, inputs: Sequence[Any], config: config_lib.Config):
   function_to_evolve, function_to_run = _extract_function_names(specification)
 
   template = code_manipulation.text_to_program(specification)
+  print(template)
+  print("template end")
   database = programs_database.ProgramsDatabase(
       config.programs_database, template, function_to_evolve)
 
@@ -66,3 +82,45 @@ def main(specification: str, inputs: Sequence[Any], config: config_lib.Config):
   # sampler will do any work.
   for s in samplers:
     s.sample()
+
+if __name__ == "__main__":
+    # Define your specification string
+    specification = textwrap.dedent('''
+    """Finds large cap sets."""
+    import itertools
+    import numpy as np
+ 
+    # @funsearch.run
+    def evaluate(n: int) -> int:
+      capset = solve(n)
+
+      return 20
+
+    def solve(n: int) -> np.ndarray:
+      all_vectors = np.array(list(itertools.product((0, 1, 2), repeat=n)), dtype=np.int32)
+
+      powers = 3 ** np.arange(n - 1, -1, -1)
+      priorities = np.array([priority(tuple(vector), n) for vector in all_vectors])
+
+      capset = np.empty(shape=(0, n), dtype=np.int32)
+      while np.any(priorities != -np.inf):
+            # print("in loop")
+            max_index = np.argmax(priorities)
+            vector = all_vectors[None, max_index]  # [1, n]
+            blocking = np.einsum('cn,n->c', (- capset - vector) % 3, powers)  # [C]
+            priorities[blocking] = -np.inf
+            priorities[max_index] = -np.inf
+            capset = np.concatenate([capset, vector], axis=0)
+
+      return 4
+
+    # @funsearch.evolve
+    def priority(el: tuple[int, ...], n: int) -> float:
+        return 0.0
+''')
+    # Define your inputs (adjust these as needed)
+    inputs = [3]
+    config = config_lib.Config()
+
+    # Call main with the defined arguments.
+    main(specification, inputs, config)

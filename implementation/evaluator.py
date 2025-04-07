@@ -18,9 +18,13 @@ import ast
 from collections.abc import Sequence
 import copy
 from typing import Any
+import tempfile
+import os
+import subprocess
+from typing import Any, Tuple
 
-from funsearch.implementation import code_manipulation
-from funsearch.implementation import programs_database
+from funsearch_dsl.implementation import code_manipulation
+from funsearch_dsl.implementation import programs_database
 
 
 class _FunctionLineVisitor(ast.NodeVisitor):
@@ -89,15 +93,82 @@ class Sandbox:
   """Sandbox for executing generated code."""
 
   def run(
-      self,
-      program: str,
-      function_to_run: str,
-      test_input: str,
-      timeout_seconds: int,
-  ) -> tuple[Any, bool]:
-    """Returns `function_to_run(test_input)` and whether execution succeeded."""
-    raise NotImplementedError(
-        'Must provide a sandbox for executing untrusted code.')
+        self,
+        program: str,
+        function_to_run: str,
+        test_input: Any,
+        timeout_seconds: int
+    ) -> Tuple[Any, bool]:
+            """
+            Executes Python code in a subprocess and returns:
+            - The function's output
+            - Boolean indicating successful execution
+            """
+        # with tempfile.TemporaryDirectory() as temp_dir:
+            temp_dir = os.getcwd()
+            script_path = os.path.join(temp_dir, 'generated_code.py')
+            
+            # Create complete executable program
+            full_program = f"""
+{program}
+
+def safe_eval(input_str):
+    try:
+        return ast.literal_eval(input_str)
+    except:
+        return input_str
+
+if __name__ == "__main__":
+    import sys
+    import ast
+    import json
+    
+    if len(sys.argv) < 2:
+        print(0.0)
+        sys.exit(1)
+    
+    input_data = safe_eval(sys.argv[1])
+    # print("Input data:", input_data)  # For debugging purposes
+    
+    try:
+        result = {function_to_run}(input_data)
+        print(float(result))
+    except Exception as e:
+        print(f"Error: {{str(e)}}")
+        print(0.0)
+                          """
+            print(full_program)
+            with open(script_path, 'w') as f:
+                f.write(full_program.strip())
+
+            try:
+                # Convert input to string representation
+                input_str = str(test_input)
+                
+                # Execute in subprocess with timeout
+                result = subprocess.run(
+                    ['python', script_path, "3"],
+                    capture_output=True,
+                    text=True,
+                    timeout=4000,
+                    check=True,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                
+                # Try to parse numerical output
+                output = result.stdout.strip()
+                print("output ", output)
+                return float(output), True
+                
+            except subprocess.TimeoutExpired:
+                return None, False
+            except subprocess.CalledProcessError as e:
+                print(f"Process Error: Command failed with exit code {e.returncode}")
+                print(f"Command: {e.cmd}")
+                print(f"Output: {e.stdout}")
+                print(f"Error: {e.stderr}")
+                return None, False
 
 
 def _calls_ancestor(program: str, function_to_evolve: str) -> bool:
@@ -141,11 +212,13 @@ class Evaluator:
     """Compiles the sample into a program and executes it on test inputs."""
     new_function, program = _sample_to_program(
         sample, version_generated, self._template, self._function_to_evolve)
-
+    # print("program ", program)
     scores_per_test = {}
+    print("function to run", self._function_to_run)
     for current_input in self._inputs:
       test_output, runs_ok = self._sandbox.run(
           program, self._function_to_run, current_input, self._timeout_seconds)
+      print("runs_ok:", runs_ok)
       if (runs_ok and not _calls_ancestor(program, self._function_to_evolve)
           and test_output is not None):
         if not isinstance(test_output, (int, float)):

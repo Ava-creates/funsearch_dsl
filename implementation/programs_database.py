@@ -24,8 +24,8 @@ from absl import logging
 import numpy as np
 import scipy
 
-from funsearch.implementation import code_manipulation
-from funsearch.implementation import config as config_lib
+from funsearch_dsl.implementation import code_manipulation
+from funsearch_dsl.implementation import config as config_lib
 
 Signature = tuple[float, ...]
 ScoresPerTest = Mapping[Any, float]
@@ -268,6 +268,7 @@ class Island:
 
     # Replace functions in the template with the list constructed here.
     prompt = dataclasses.replace(self._template, functions=versioned_functions)
+    print(str(prompt))
     return str(prompt)
 
 

@@ -15,11 +15,11 @@
 
 """Class for sampling new programs."""
 from collections.abc import Collection, Sequence
-
+import requests
 import numpy as np
 
-from funsearch.implementation import evaluator
-from funsearch.implementation import programs_database
+from funsearch_dsl.implementation import evaluator
+from funsearch_dsl.implementation import programs_database
 
 
 class LLM:
@@ -30,7 +30,13 @@ class LLM:
 
   def _draw_sample(self, prompt: str) -> str:
     """Returns a predicted continuation of `prompt`."""
-    raise NotImplementedError('Must provide a language model.')
+    api_url = "http://129.128.243.184:11434/api/generate"
+    headers = {"Content-Type": "application/json"}
+    payload = {"model": "deepseek-coder-v2:16b", "prompt": prompt, "stream": False, "template": "{{ .Prompt }}", "options": {"num_ctx": 4096, "stop": ["\ndef", "\nclass", "\n#", "\nimport"]}}
+    res = requests.post(api_url, headers=headers, json=payload, timeout=300)
+    print(res)
+    
+    raise 
 
   def draw_samples(self, prompt: str) -> Collection[str]:
     """Returns multiple predicted continuations of `prompt`."""
@@ -54,7 +60,7 @@ class Sampler:
     """Continuously gets prompts, samples programs, sends them for analysis."""
     while True:
       prompt = self._database.get_prompt()
-      samples = self._llm.draw_samples(prompt.code)
+      samples = self._llm._draw_sample(prompt.code)
       # This loop can be executed in parallel on remote evaluator machines.
       for sample in samples:
         chosen_evaluator = np.random.choice(self._evaluators)
