@@ -185,6 +185,7 @@ class Evaluator:
     self._inputs = inputs
     self._timeout_seconds = timeout_seconds
     self._sandbox = Sandbox()
+    self._log_file = None  # Will be initialized on first use
 
   def analyse(
       self,
@@ -220,8 +221,12 @@ class Evaluator:
         'scores': scores_per_test
     }
     
-    log_file = 'program_registration.log'
-    with open(log_file, 'a') as f:
+
+    if self._log_file is None:
+        current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        self._log_file = f'program_registration_{current_date}.log'
+    
+    with open(self._log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
     
     if scores_per_test:

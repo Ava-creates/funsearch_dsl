@@ -477,7 +477,7 @@ def evaluate() -> float:
 @funsearch.evolve
 def craft(env, item) -> list[int]:
   """Returns a list of actions to craft the item which is the index of the item in the env.world.cookbook.index"""
-  return [1,4]
+  return []
 ''')
     # Define your inputs (adjust these as needed)
     inputs = [3]

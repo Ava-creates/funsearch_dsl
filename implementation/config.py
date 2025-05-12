@@ -56,4 +56,4 @@ class Config:
       default_factory=ProgramsDatabaseConfig)
   num_samplers: int = 1
   num_evaluators: int = 1
-  samples_per_prompt: int = 4
+  samples_per_prompt: int = 2
