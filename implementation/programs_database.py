@@ -24,8 +24,8 @@ from absl import logging
 import numpy as np
 import scipy
 
-from funsearch_dsl.implementation import code_manipulation
-from funsearch_dsl.implementation import config as config_lib
+from funsearch.implementation import code_manipulation
+from funsearch.implementation import config as config_lib
 
 Signature = tuple[float, ...]
 ScoresPerTest = Mapping[Any, float]
@@ -129,6 +129,14 @@ class ProgramsDatabase:
       scores_per_test: ScoresPerTest,
   ) -> None:
     """Registers `program` in the database."""
+    # Log the program being registered
+    logging.info('Registering program in database: %s', str(program))
+    logging.info('Scores per test: %s', scores_per_test)
+    if island_id is not None:
+      logging.info('Adding to island %d', island_id)
+    else:
+      logging.info('Adding to all islands')
+
     # In an asynchronous implementation we should consider the possibility of
     # registering a program on an island that had been reset after the prompt
     # was generated. Leaving that out here for simplicity.
@@ -268,7 +276,7 @@ class Island:
 
     # Replace functions in the template with the list constructed here.
     prompt = dataclasses.replace(self._template, functions=versioned_functions)
-    print(str(prompt))
+    # print(str(prompt))
     return str(prompt)
 
 

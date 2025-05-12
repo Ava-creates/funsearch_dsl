@@ -22,9 +22,11 @@ import tempfile
 import os
 import subprocess
 from typing import Any, Tuple
+import json
+from datetime import datetime
 
-from funsearch_dsl.implementation import code_manipulation
-from funsearch_dsl.implementation import programs_database
+from funsearch.implementation import code_manipulation
+from funsearch.implementation import programs_database
 
 
 class _FunctionLineVisitor(ast.NodeVisitor):
@@ -76,7 +78,9 @@ def _sample_to_program(
     function_to_evolve: str,
 ) -> tuple[code_manipulation.Function, str]:
   """Returns the compiled generated function and the full runnable program."""
+
   body = _trim_function_body(generated_code)
+
   if version_generated is not None:
     body = code_manipulation.rename_function_calls(
         body,
@@ -110,34 +114,10 @@ class Sandbox:
             
             # Create complete executable program
             full_program = f"""
-{program}
-
-def safe_eval(input_str):
-    try:
-        return ast.literal_eval(input_str)
-    except:
-        return input_str
-
-if __name__ == "__main__":
-    import sys
-    import ast
-    import json
-    
-    if len(sys.argv) < 2:
-        print(0.0)
-        sys.exit(1)
-    
-    input_data = safe_eval(sys.argv[1])
-    # print("Input data:", input_data)  # For debugging purposes
-    
-    try:
-        result = {function_to_run}(input_data)
-        print(float(result))
-    except Exception as e:
-        print(f"Error: {{str(e)}}")
-        print(0.0)
+{program} 
+print({function_to_run}() +1)
                           """
-            print(full_program)
+            # print(full_program)
             with open(script_path, 'w') as f:
                 f.write(full_program.strip())
 
@@ -159,7 +139,10 @@ if __name__ == "__main__":
                 # Try to parse numerical output
                 output = result.stdout.strip()
                 print("output ", output)
-                return float(output), True
+                try:
+                    return float(output), True
+                except ValueError:
+                    return -1, True
                 
             except subprocess.TimeoutExpired:
                 return None, False
@@ -210,6 +193,7 @@ class Evaluator:
       version_generated: int | None,
   ) -> None:
     """Compiles the sample into a program and executes it on test inputs."""
+    # print("sample from the llm", sample)
     new_function, program = _sample_to_program(
         sample, version_generated, self._template, self._function_to_evolve)
     # print("program ", program)
@@ -219,10 +203,26 @@ class Evaluator:
       test_output, runs_ok = self._sandbox.run(
           program, self._function_to_run, current_input, self._timeout_seconds)
       print("runs_ok:", runs_ok)
+      if(runs_ok == False):
+        scores_per_test[current_input] = -1
       if (runs_ok and not _calls_ancestor(program, self._function_to_evolve)
           and test_output is not None):
         if not isinstance(test_output, (int, float)):
           raise ValueError('@function.run did not return an int/float score.')
         scores_per_test[current_input] = test_output
+    
+    # Log the registration details
+    log_entry = {
+        'timestamp': datetime.now().isoformat(),
+        'function_name': new_function.name,
+        'function_body': new_function.body,
+        'island_id': island_id,
+        'scores': scores_per_test
+    }
+    
+    log_file = 'program_registration.log'
+    with open(log_file, 'a') as f:
+        f.write(json.dumps(log_entry) + '\n')
+    
     if scores_per_test:
       self._database.register_program(new_function, island_id, scores_per_test)
