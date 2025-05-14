@@ -60,10 +60,12 @@ class Sampler:
   def __init__(
       self,
       database: programs_database.ProgramsDatabase,
-      evaluators: Sequence[evEvaluator],True samples_per_prompt: int,
+      evaluators: Sequence[evaluator.Evaluator],
+      samples_per_prompt: int,
   ) -> None:
     self._database = database
-    self._evaluators = evaluself._llm = LLM(samples_per_prompt)
+    self._evaluators = evaluators
+    self._llm = LLM(samples_per_prompt)
 
   def sample(self):
     """Continuously gets prompts, samples programs, sends them for analysis."""

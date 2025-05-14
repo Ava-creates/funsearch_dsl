@@ -19,6 +19,8 @@ import copy
 import dataclasses
 import time
 from typing import Any
+import json
+from datetime import datetime
 
 from absl import logging
 import numpy as np
@@ -100,11 +102,18 @@ class ProgramsDatabase:
         [None] * config.num_islands)
 
     self._last_reset_time: float = time.time()
+    
+    # Initialize logging
+    logging.info('Initializing ProgramsDatabase with %d islands', config.num_islands)
+    logging.info('Function to evolve: %s', function_to_evolve)
+    logging.info('Functions per prompt: %d', config.functions_per_prompt)
+    logging.info('Reset period: %d seconds', config.reset_period)
 
   def get_prompt(self) -> Prompt:
     """Returns a prompt containing implementations from one chosen island."""
     island_id = np.random.randint(len(self._islands))
     code, version_generated = self._islands[island_id].get_prompt()
+    logging.info('Generated prompt from island %d, version %d', island_id, version_generated)
     return Prompt(code, version_generated, island_id)
 
   def _register_program_in_island(
@@ -120,7 +129,9 @@ class ProgramsDatabase:
       self._best_program_per_island[island_id] = program
       self._best_scores_per_test_per_island[island_id] = scores_per_test
       self._best_score_per_island[island_id] = score
-      logging.info('Best score of island %d increased to %s', island_id, score)
+      logging.info('Island %d: New best score %s (previous: %s)', 
+                  island_id, score, self._best_score_per_island[island_id])
+      logging.info('Best program in island %d:\n%s', island_id, str(program))
 
   def register_program(
       self,
@@ -129,6 +140,23 @@ class ProgramsDatabase:
       scores_per_test: ScoresPerTest,
   ) -> None:
     """Registers `program` in the database."""
+    # Log the program being registered
+    logging.info('Registering program in database: %s', str(program))
+    logging.info('Scores per test: %s', scores_per_test)
+    if island_id is not None:
+      logging.info('Adding to island %d', island_id)
+    else:
+      logging.info('Adding to all islands')
+
+    # Log program details to a JSON file
+    log_entry = {
+        'timestamp': datetime.now().isoformat(),
+        'function_name': program.name,
+        'function_body': program.body,
+        'island_id': island_id,
+        'scores': scores_per_test
+    }
+  
     # In an asynchronous implementation we should consider the possibility of
     # registering a program on an island that had been reset after the prompt
     # was generated. Leaving that out here for simplicity.
@@ -146,6 +174,8 @@ class ProgramsDatabase:
 
   def reset_islands(self) -> None:
     """Resets the weaker half of islands."""
+    logging.info('Starting island reset process')
+    
     # We sort best scores after adding minor noise to break ties.
     indices_sorted_by_score: np.ndarray = np.argsort(
         self._best_score_per_island +
@@ -153,6 +183,10 @@ class ProgramsDatabase:
     num_islands_to_reset = self._config.num_islands // 2
     reset_islands_ids = indices_sorted_by_score[:num_islands_to_reset]
     keep_islands_ids = indices_sorted_by_score[num_islands_to_reset:]
+    
+    logging.info('Resetting islands: %s', reset_islands_ids)
+    logging.info('Keeping islands: %s', keep_islands_ids)
+    
     for island_id in reset_islands_ids:
       self._islands[island_id] = Island(
           self._template,
@@ -164,7 +198,11 @@ class ProgramsDatabase:
       founder_island_id = np.random.choice(keep_islands_ids)
       founder = self._best_program_per_island[founder_island_id]
       founder_scores = self._best_scores_per_test_per_island[founder_island_id]
+      logging.info('Island %d: Resetting with founder from island %d', 
+                  island_id, founder_island_id)
       self._register_program_in_island(founder, island_id, founder_scores)
+    
+    logging.info('Island reset complete')
 
 
 class Island:
@@ -290,7 +328,7 @@ class Cluster:
     self._programs.append(program)
     self._lengths.append(len(str(program)))
 
-  def sample_program(self) -> code_manipulation.Function:ßß
+  def sample_program(self) -> code_manipulation.Function:
     """Samples a program, giving higher probability to shorther programs."""
     normalized_lengths = (np.array(self._lengths) - min(self._lengths)) / (
         max(self._lengths) + 1e-6)
