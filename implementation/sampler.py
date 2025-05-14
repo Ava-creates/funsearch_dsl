@@ -27,6 +27,12 @@ class LLM:
 
   def __init__(self, samples_per_prompt: int) -> None:
     self._samples_per_prompt = samples_per_prompt
+    self._models = [
+      "deepseek-coder-v2:16b",
+      "codellama:13b",
+      "mistral:7b",
+      "llama2:13b"
+    ]
 
   def _draw_sample(self, prompt: str) -> str:
     """Returns a predicted continuation of `prompt`."""
@@ -34,7 +40,7 @@ class LLM:
     api_url = "http://129.128.243.184:11434/api/generate"
     headers = {"Content-Type": "application/json"}
     try:
-      payload = {"model": "deepseek-coder-v2:16b", "prompt": prompt, "stream": False, "template": "{{ .Prompt }}", "options": {"num_ctx": 4096, "stop": ["\ndef", "\nclass", "\n#", "\nimport"]}}
+      payload = {"model": "qwen2.5-coder:32b", "prompt": prompt, "stream": False, "template": "{{ .Prompt }}", "options": {"num_ctx": 4096, "stop": ["\ndef", "\nclass", "\n#", "\nimport"]}}
       res = requests.post(api_url, headers=headers, json=payload, timeout=300)
     # print(res.json()["response"])
       w=  res.json()["response"]
@@ -54,12 +60,10 @@ class Sampler:
   def __init__(
       self,
       database: programs_database.ProgramsDatabase,
-      evaluators: Sequence[evaluator.Evaluator],
-      samples_per_prompt: int,
+      evaluators: Sequence[evEvaluator],True samples_per_prompt: int,
   ) -> None:
     self._database = database
-    self._evaluators = evaluators
-    self._llm = LLM(samples_per_prompt)
+    self._evaluators = evaluself._llm = LLM(samples_per_prompt)
 
   def sample(self):
     """Continuously gets prompts, samples programs, sends them for analysis."""

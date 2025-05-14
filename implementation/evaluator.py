@@ -221,7 +221,6 @@ class Evaluator:
         'scores': scores_per_test
     }
     
-
     if self._log_file is None:
         current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
         self._log_file = f'program_registration_{current_date}.log'
