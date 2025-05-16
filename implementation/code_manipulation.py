@@ -27,7 +27,7 @@ import dataclasses
 import io
 import tokenize
 
-from absl import logging
+# from absl import logging
 
 
 @dataclasses.dataclass
@@ -155,7 +155,7 @@ def text_to_program(text: str) -> Program:
     visitor.visit(tree)
     return visitor.return_program()
   except Exception as e:
-    logging.warning('Failed parsing %s', text)
+    print("Failed parsing")
     raise e
 
 
@@ -205,7 +205,7 @@ def _yield_token_and_is_call(
     if prev_token:
       yield prev_token, False
   except Exception as e:
-    logging.warning('Failed parsing %s', code)
+    print("Failed parsing ")
     raise e
 
 

@@ -22,6 +22,10 @@ from funsearch.implementation import config as config_lib
 from funsearch.implementation import evaluator
 from funsearch.implementation import programs_database
 from funsearch.implementation import sampler
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def _extract_function_names(specification: str) -> tuple[str, str]:
@@ -60,7 +64,17 @@ def main(specification: str, inputs: Sequence[Any], config: config_lib.Config):
   initial = template.get_function(function_to_evolve).body
   evaluators[0].analyse(initial, island_id=None, version_generated=None)
 
-  samplers = [sampler.Sampler(database, evaluators, config.samples_per_prompt)
+  # Load model and tokenizer once
+  model_name = "Qwen/Qwen2.5-Coder-32B"
+  tokenizer = AutoTokenizer.from_pretrained(model_name)
+  model = AutoModelForCausalLM.from_pretrained(
+      model_name,
+      torch_dtype=torch.float16,
+      device_map="auto",  # This will automatically split the model across available GPUs
+      max_memory={0: "20GiB", 1: "20GiB"}  # Specify memory limit for each GPU
+  )
+
+  samplers = [sampler.Sampler(database, evaluators, config.samples_per_prompt, model=model, tokenizer=tokenizer)
               for _ in range(config.num_samplers)]
 
   # This loop can be executed in parallel on remote sampler machines. As each
@@ -96,7 +110,7 @@ Indented multiline string of all attributes
 Inputs
 self
 Outputs
-“Struct({…})” showing internal attribute dict
+"Struct({…})" showing internal attribute dict
 
 ---
 
@@ -128,7 +142,7 @@ get(self, idx) → str
 Inputs
 idx: int
 Outputs
-Name for idx or “*invalid*” if idx == 0
+Name for idx or "*invalid*" if idx == 0
 
 **len**(self) → int
 Inputs
@@ -146,7 +160,7 @@ Iterator over ordered\_contents
 Inputs
 self
 Outputs
-“Index: {…}” showing contents dict
+"Index: {…}" showing contents dict
 
 ---
 
@@ -185,7 +199,7 @@ None
 
 Function: parse\_fexp(fexp) → (str, str)
 Inputs
-fexp: str of form “name\[arg]”
+fexp: str of form "name[arg]"
 Outputs
 (name, arg) extracted via regex
 Data Attributes
@@ -247,8 +261,8 @@ n_actions: int number of possible actions (N_ACTIONS)
 non_grabbable_indices: set of int indices for entities that cannot be picked up
 grabbable_indices: list of int indices for entities that can be picked up
 workshop_indices: list of int indices for workshop locations
-water_index: int index for the “water” entity
-stone_index: int index for the “stone” entity
+water_index: int index for the "water" entity
+stone_index: int index for the "stone" entity
 random: numpy.random.RandomState initialized with the given seed
 
 
@@ -271,8 +285,8 @@ CraftState
 
 Data Attributes 
 init_grid: numpy.ndarray (the initial grid layout)
-init_pos: tuple(int, int) (the agent’s starting position)
-init_dir: int (the agent’s starting direction, default 0)
+init_pos: tuple(int, int) (the agent's starting position)
+init_dir: int (the agent's starting direction, default 0)
 world: CraftWorld instance (reference to the world configuration)
 
 
@@ -335,8 +349,8 @@ scenario: CraftScenario instance (reference to the scenario that created this st
 world: CraftWorld instance (reference to the world configuration)
 grid: numpy.ndarray of shape (WIDTH, HEIGHT, n_kinds) (current grid occupancy)
 inventory: numpy.ndarray of length n_kinds (current counts of each item)
-pos: tuple(int, int) (agent’s current position)
-dir: int (agent’s current facing direction)
+pos: tuple(int, int) (agent's current position)
+dir: int (agent's current facing direction)
 _cached_features_dict: dict or None (cache for computed feature slices)
 _cached_features: numpy.ndarray or None (cache for flattened feature vector)
 
@@ -477,7 +491,7 @@ def evaluate() -> float:
 @funsearch.evolve
 def craft(env, item) -> list[int]:
   """Returns a list of actions to craft the item which is the index of the item in the env.world.cookbook.index"""
-  return [1,4]
+  return []
 ''')
     # Define your inputs (adjust these as needed)
     inputs = [3]

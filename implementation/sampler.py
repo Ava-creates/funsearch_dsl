@@ -15,8 +15,9 @@
 
 """Class for sampling new programs."""
 from collections.abc import Collection, Sequence
-import requests
 import numpy as np
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 
 from funsearch.implementation import evaluator
 from funsearch.implementation import programs_database
@@ -25,28 +26,40 @@ from funsearch.implementation import programs_database
 class LLM:
   """Language model that predicts continuation of provided source code."""
 
-  def __init__(self, samples_per_prompt: int) -> None:
+  def __init__(self, samples_per_prompt: int, model=None, tokenizer=None) -> None:
     self._samples_per_prompt = samples_per_prompt
-    self._models = [
-      "deepseek-coder-v2:16b",
-      "codellama:13b",
-      "mistral:7b",
-      "llama2:13b"
-    ]
+    self.model = model
+    self.tokenizer = tokenizer
+    self.stop_tokens = ["\ndef", "\nclass", "\n#", "\nimport"]
 
   def _draw_sample(self, prompt: str) -> str:
     """Returns a predicted continuation of `prompt`."""
-    print("going in the lllm")
-    api_url = "http://129.128.243.184:11434/api/generate"
-    headers = {"Content-Type": "application/json"}
     try:
-      payload = {"model": "qwen2.5-coder:32b", "prompt": prompt, "stream": False, "template": "{{ .Prompt }}", "options": {"num_ctx": 4096, "stop": ["\ndef", "\nclass", "\n#", "\nimport"]}}
-      res = requests.post(api_url, headers=headers, json=payload, timeout=300)
-    # print(res.json()["response"])
-      w=  res.json()["response"]
-      # print(w)
-      return w
-    except:
+      # Tokenize the prompt
+      inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+      
+      # Generate continuation
+      outputs = self.model.generate(
+          **inputs,
+          max_new_tokens=512,
+          do_sample=True,
+          temperature=0.7,
+          top_p=0.95,
+          pad_token_id=self.tokenizer.eos_token_id,
+          eos_token_id=self.tokenizer.eos_token_id,
+      )
+      
+      generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+      
+      continuation = generated_text[len(prompt):]
+      
+      for stop_token in self.stop_tokens:
+        if stop_token in continuation:
+          continuation = continuation.split(stop_token)[0]
+      
+      return continuation
+    except Exception as e:
+      print(f"Error during generation: {str(e)}")
       return "return [0]"
 
   def draw_samples(self, prompt: str) -> Collection[str]:
@@ -62,10 +75,12 @@ class Sampler:
       database: programs_database.ProgramsDatabase,
       evaluators: Sequence[evaluator.Evaluator],
       samples_per_prompt: int,
+      model=None,
+      tokenizer=None,
   ) -> None:
     self._database = database
     self._evaluators = evaluators
-    self._llm = LLM(samples_per_prompt)
+    self._llm = LLM(samples_per_prompt, model=model, tokenizer=tokenizer)
 
   def sample(self):
     """Continuously gets prompts, samples programs, sends them for analysis."""

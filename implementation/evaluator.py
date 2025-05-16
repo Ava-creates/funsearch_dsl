@@ -145,13 +145,13 @@ print({function_to_run}() +1)
                     return -1, True
                 
             except subprocess.TimeoutExpired:
-                return None, False
+                return -1, False
             except subprocess.CalledProcessError as e:
                 print(f"Process Error: Command failed with exit code {e.returncode}")
                 print(f"Command: {e.cmd}")
                 print(f"Output: {e.stdout}")
                 print(f"Error: {e.stderr}")
-                return None, False
+                return -1, False
 
 
 def _calls_ancestor(program: str, function_to_evolve: str) -> bool:
