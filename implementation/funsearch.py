@@ -71,7 +71,6 @@ def main(specification: str, inputs: Sequence[Any], config: config_lib.Config):
       model_name,
       torch_dtype=torch.float16,
       device_map="auto",  # This will automatically split the model across available GPUs
-      max_memory={0: "20GiB", 1: "20GiB"}  # Specify memory limit for each GPU
   )
 
   samplers = [sampler.Sampler(database, evaluators, config.samples_per_prompt, model=model, tokenizer=tokenizer)
