@@ -26,6 +26,7 @@ from collections.abc import Iterator, MutableSet, Sequence
 import dataclasses
 import io
 import tokenize
+from typing import Union
 
 # from absl import logging
 
@@ -37,8 +38,8 @@ class Function:
   name: str
   args: str
   body: str
-  return_type: str | None = None
-  docstring: str | None = None
+  return_type: Union[str, None] = None
+  docstring: Union[str, None] = None
 
   def __str__(self) -> str:
     return_type = f' -> {self.return_type}' if self.return_type else ''
@@ -111,7 +112,7 @@ class ProgramVisitor(ast.NodeVisitor):
 
     self._preface: str = ''
     self._functions: list[Function] = []
-    self._current_function: str | None = None
+    self._current_function: Union[str, None] = None
 
   def visit_FunctionDef(self,  # pylint: disable=invalid-name
                         node: ast.FunctionDef) -> None:

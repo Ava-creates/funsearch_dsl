@@ -222,8 +222,12 @@ class Evaluator:
     }
     
     if self._log_file is None:
+        # Create results directory if it doesn't exist
+        results_dir = 'results'
+        os.makedirs(results_dir, exist_ok=True)
+        
         current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        self._log_file = f'program_registration_{current_date}.log'
+        self._log_file = os.path.join(results_dir, f'program_registration_{current_date}.log')
     
     with open(self._log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')

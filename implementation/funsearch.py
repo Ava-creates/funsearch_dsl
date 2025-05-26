@@ -25,6 +25,7 @@ from funsearch.implementation import sampler
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 import os
+import argparse
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
@@ -64,16 +65,26 @@ def main(specification: str, inputs: Sequence[Any], config: config_lib.Config):
   initial = template.get_function(function_to_evolve).body
   evaluators[0].analyse(initial, island_id=None, version_generated=None)
 
-  # Load model and tokenizer once
-  model_name = "Qwen/Qwen2.5-Coder-32B"
-  tokenizer = AutoTokenizer.from_pretrained(model_name)
-  model = AutoModelForCausalLM.from_pretrained(
-      model_name,
-      torch_dtype=torch.float16,
-      device_map="auto",  # This will automatically split the model across available GPUs
-  )
+  # Load model and tokenizer based on command line argument
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--model_type', type=str, choices=['huggingface', 'ollama'], 
+                     default='huggingface', help='Choose between huggingface or ollama models')
+  args = parser.parse_args()
 
-  samplers = [sampler.Sampler(database, evaluators, config.samples_per_prompt, model=model, tokenizer=tokenizer)
+  if args.model_type == 'huggingface':
+    model_name = "Qwen/Qwen2.5-Coder-32B"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16,
+        device_map="auto",
+    )
+  else:  # ollama
+    model = None
+    tokenizer = None
+
+  samplers = [sampler.Sampler(database, evaluators, config.samples_per_prompt, 
+                            model=model, tokenizer=tokenizer, model_type=args.model_type)
               for _ in range(config.num_samplers)]
 
   # This loop can be executed in parallel on remote sampler machines. As each
