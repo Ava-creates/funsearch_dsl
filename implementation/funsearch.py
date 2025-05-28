@@ -72,10 +72,10 @@ def main(specification: str, inputs: Sequence[Any], config: config_lib.Config):
   args = parser.parse_args()
 
   if args.model_type == 'huggingface':
-    model_name = "Qwen/Qwen2.5-Coder-32B"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model_path = "/scratch/avani/qwen"
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = AutoModelForCausalLM.from_pretrained(
-        model_name,
+        model_path,
         torch_dtype=torch.float16,
         device_map="auto",
     )
