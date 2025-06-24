@@ -115,7 +115,7 @@ class Sandbox:
             # Create complete executable program
             full_program = f"""
 {program} 
-print({function_to_run}() +1)
+print({function_to_run}())
                           """
             # print(full_program)
             with open(script_path, 'w') as f:
@@ -127,10 +127,10 @@ print({function_to_run}() +1)
                 
                 # Execute in subprocess with timeout
                 result = subprocess.run(
-                    ['python', script_path, "3"],
+                    ['python', script_path],
                     capture_output=True,
                     text=True,
-                    timeout=4000,
+                    timeout=timeout_seconds,
                     check=True,
                     encoding='utf-8',
                     errors='replace'
@@ -176,14 +176,16 @@ class Evaluator:
       function_to_evolve: str,
       function_to_run: str,
       inputs: Sequence[Any],
-      timeout_seconds: int = 30,
+      function_name: str
+      
   ):
     self._database = database
     self._template = template
     self._function_to_evolve = function_to_evolve
     self._function_to_run = function_to_run
     self._inputs = inputs
-    self._timeout_seconds = timeout_seconds
+    self._timeout_seconds = 30
+    self._function_name = function_name
     self._sandbox = Sandbox()
     self._log_file = None  # Will be initialized on first use
 
@@ -227,10 +229,22 @@ class Evaluator:
         os.makedirs(results_dir, exist_ok=True)
         
         current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        self._log_file = os.path.join(results_dir, f'program_registration_{current_date}.log')
+        self._log_file = os.path.join(results_dir, f'program_registration_{current_date}_{self._function_name}.log')
     
     with open(self._log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
     
     if scores_per_test:
       self._database.register_program(new_function, island_id, scores_per_test)
+
+    ##automate this 
+    if(self._function_name == "move" and sum(scores_per_test.values()) == 4):
+        return 1
+    elif(self._function_name == "use" and sum(scores_per_test.values()) == 2):
+        return 1
+    elif(self._function_name == "craft" and sum(scores_per_test.values())  == 2.5):
+        return 1
+    else:
+      return 0 
+
+
