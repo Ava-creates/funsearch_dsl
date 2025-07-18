@@ -25,7 +25,50 @@ from datetime import datetime
 from funsearch.implementation import evaluator
 from funsearch.implementation import programs_database
 
+import ast
+import textwrap
 
+def is_reward_hacking_from_body(code_body: str) -> bool:
+    code_wrapped = f"def dummy():\n{textwrap.indent(code_body, '    ')}"
+    
+    try:
+        tree = ast.parse(code_wrapped)
+        func_node = tree.body[0]  # the wrapped dummy function
+
+        assigned_constants = {}
+        modified_vars = set()
+
+        for node in ast.walk(func_node):
+            if isinstance(node, ast.Assign):
+                if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    var_name = node.targets[0].id
+                    if isinstance(node.value, (ast.Constant, ast.Num, ast.Str, ast.List, ast.Tuple)):
+                        assigned_constants[var_name] = node.lineno
+            elif isinstance(node, (ast.AugAssign, ast.Call)):
+                # Augmented assignment or function call indicates modification
+                targets = []
+                if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
+                    targets = [node.target.id]
+                elif isinstance(node, ast.Call):
+                    for arg in node.args:
+                        if isinstance(arg, ast.Name):
+                            targets.append(arg.id)
+                for t in targets:
+                    modified_vars.add(t)
+
+        for node in ast.walk(func_node):
+            if isinstance(node, ast.Return):
+                if isinstance(node.value, (ast.Constant, ast.Num, ast.Str, ast.List, ast.Tuple)):
+                    return True
+                elif isinstance(node.value, ast.Name):
+                    var_name = node.value.id
+                    if var_name in assigned_constants and var_name not in modified_vars:
+                        return True
+        return False
+    except Exception as e:
+        print(f"Error parsing code: {e}")
+        return False
+        
 class LLM:
   """Language model that predicts continuation of provided source code."""
 
@@ -40,51 +83,59 @@ class LLM:
     """Returns a predicted continuation of `prompt`."""
     if self.model_type == 'huggingface':
       try:
-        # Tokenize the prompt
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-        
-        # Generate continuation
-        outputs = self.model.generate(
-            **inputs,
-            max_new_tokens=512,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.95,
-            pad_token_id=self.tokenizer.eos_token_id,
-            eos_token_id=self.tokenizer.eos_token_id,
-        )
-        
-        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        
-        continuation = generated_text[len(prompt):]
-        
-        for stop_token in self.stop_tokens:
-          if stop_token in continuation:
-            continuation = continuation.split(stop_token)[0]
-        
+        while True:
+          outputs = self.model.generate(
+              **inputs,
+              max_new_tokens=512,
+              do_sample=True,
+              temperature=0.8,
+              top_p=0.95,
+              pad_token_id=self.tokenizer.eos_token_id,
+              eos_token_id=self.tokenizer.eos_token_id,
+          )
+          
+          generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+          
+          continuation = generated_text[len(prompt):]
+          
+          for stop_token in self.stop_tokens:
+            if stop_token in continuation:
+              continuation = continuation.split(stop_token)[0]
+          if not is_reward_hacking_from_body(continuation):
+            break
+
         return continuation
       except Exception as e:
         print(f"Error in Hugging Face generation: {e}")
         return "return [0]"
     else:  # ollama
+      system = """You are an expert in solving tasks some simulation environments using programmatic strategies. You will be given the details on the simulation environment (in the form of its code base), a domain-specific language (DSL) that is designed to solve the task in a compositional way, and you will be asked to come up with the implementation of specific functions in the DSL to using the provided code base. You are safe to assume that other than the function we ask you to implement, the rest of the constructs in the DSL are already implemented properly. 
+        ## Code base for the game
+        The code base contains the following information:
+        - Classes: Each class includes informations about data attributes, class constructors and functions. We also provide information about the inputs to the constructors, and inputs, outputs and type signatures of the functions. 
+        - Functions: These are functions that do not belong to any class. We provide the input, output and the type signatures of the functions."""
       print("going in the llm")
       api_url = "http://129.128.243.184:11434/api/generate"
       headers = {"Content-Type": "application/json"}
       try:
-        payload = {
-          "model": "qwen2.5-coder:32b", 
-          "prompt": prompt, 
-          "stream": False, 
-          "template": "{{ .Prompt }}", 
-          "options": {
-            "num_ctx": 4096, 
-            "stop": self.stop_tokens
-          }
-        }
-        res = requests.post(api_url, headers=headers, json=payload, timeout=300)
-        with open("prompt_eval.txt", 'w') as f:
-            f.write(res.json()["response"])
-        return res.json()["response"]
+        while True:
+            payload = {
+              "model": "qwen2.5-coder:32b", 
+              "prompt": prompt, 
+              "template": "{{.Prompt}}",
+              "stream": False, 
+              "options": {
+                "num_ctx": 4096, 
+                "stop": self.stop_tokens
+              }
+            }
+            res = requests.post(api_url, headers=headers, json=payload, timeout=300)
+            # print(res)
+            if not is_reward_hacking_from_body(res.json()["response"]):
+              break
+
+      return res.json()["response"]
       except Exception as e:
         print(f"Error in Ollama generation: {e}")
         return "return [0]"
@@ -129,7 +180,7 @@ class Sampler:
     n=0
     best_samples=[]
     f = 0
-    while n<2000:
+    while n<1000:
       prompt = self._database.get_prompt()
       # print(prompt)
       samples = self._llm.draw_samples(prompt.code)
@@ -151,7 +202,7 @@ class Sampler:
         results_dir = 'results'
         os.makedirs(results_dir, exist_ok=True)
         current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        function_name = self._evaluators[0].function_name
+        function_name = self._evaluators[0]._function_name
         log_file = os.path.join(results_dir, f'best_samples_{current_date}_{function_name}.log')
         with open(log_file, 'w') as f:
             for i, sample in enumerate(best_samples, 1):
