@@ -184,7 +184,7 @@ class Evaluator:
     self._function_to_evolve = function_to_evolve
     self._function_to_run = function_to_run
     self._inputs = inputs
-    self._timeout_seconds = 60
+    self._timeout_seconds = 90
     self._function_name = function_name
     self._sandbox = Sandbox()
     self._log_file = None  # Will be initialized on first use

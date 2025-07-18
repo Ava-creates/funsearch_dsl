@@ -82,29 +82,39 @@ class LLM:
   def _draw_sample(self, prompt: str) -> str:
     """Returns a predicted continuation of `prompt`."""
     if self.model_type == 'huggingface':
+      local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
+
+      tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
+      model = AutoModelForCausalLM.from_pretrained(
+            local_model_path,
+            device_map="auto",             # automatically selects GPUs if available
+            torch_dtype=torch.float16,     # for large models like 32B
+            trust_remote_code=True
+        )
       try:
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
         while True:
-          outputs = self.model.generate(
+
+          outputs = model.generate(
               **inputs,
               max_new_tokens=512,
               do_sample=True,
               temperature=0.8,
               top_p=0.95,
-              pad_token_id=self.tokenizer.eos_token_id,
-              eos_token_id=self.tokenizer.eos_token_id,
+              pad_token_id=tokenizer.eos_token_id,
+              eos_token_id=tokenizer.eos_token_id,
           )
-          
-          generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+          generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
           
           continuation = generated_text[len(prompt):]
           
           for stop_token in self.stop_tokens:
             if stop_token in continuation:
               continuation = continuation.split(stop_token)[0]
+          print("continuation", continuation)
           if not is_reward_hacking_from_body(continuation):
             break
-
         return continuation
       except Exception as e:
         print(f"Error in Hugging Face generation: {e}")
