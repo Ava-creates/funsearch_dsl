@@ -78,34 +78,34 @@ class LLM:
     self.tokenizer = tokenizer
     self.model_type = model_type
     self.stop_tokens = ["\ndef", "\nclass", "\n#", "\nimport"]
+    local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
+
+    self.tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
+    self.model = AutoModelForCausalLM.from_pretrained(
+    local_model_path,
+    device_map="auto",             # automatically selects GPUs if available
+    torch_dtype=torch.float16,     # for large models like 32B
+    trust_remote_code=True
+)
 
   def _draw_sample(self, prompt: str) -> str:
     """Returns a predicted continuation of `prompt`."""
     if self.model_type == 'huggingface':
-      local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
-
-      tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
-      model = AutoModelForCausalLM.from_pretrained(
-            local_model_path,
-            device_map="auto",             # automatically selects GPUs if available
-            torch_dtype=torch.float16,     # for large models like 32B
-            trust_remote_code=True
-        )
       try:
-        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         while True:
-
-          outputs = model.generate(
+          
+          outputs = self.model.generate(
               **inputs,
               max_new_tokens=512,
               do_sample=True,
               temperature=0.8,
-              top_p=0.95,
-              pad_token_id=tokenizer.eos_token_id,
-              eos_token_id=tokenizer.eos_token_id,
+              top_p=0.9,
+              pad_token_id=self.tokenizer.eos_token_id,
+              eos_token_id=self.tokenizer.eos_token_id,
           )
-
-          generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+          print()
+          generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
           
           continuation = generated_text[len(prompt):]
           
