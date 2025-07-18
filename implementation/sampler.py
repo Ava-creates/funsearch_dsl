@@ -135,7 +135,7 @@ class LLM:
             if not is_reward_hacking_from_body(res.json()["response"]):
               break
 
-      return res.json()["response"]
+        return res.json()["response"]
       except Exception as e:
         print(f"Error in Ollama generation: {e}")
         return "return [0]"
