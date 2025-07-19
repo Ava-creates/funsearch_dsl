@@ -211,10 +211,10 @@ class Evaluator:
       if (runs_ok and not _calls_ancestor(program, self._function_to_evolve)
           and test_output is not None):
         if not isinstance(test_output, (int, float)):
-          raise ValueError('@function.run did not return an int/float score.')
+          scores_per_test[current_input] = -1
+          # raise ValueError('@function.run did not return an int/float score.')
         scores_per_test[current_input] = test_output
     
-    # Log the registration details
     log_entry = {
         'timestamp': datetime.now().isoformat(),
         'function_name': new_function.name,
@@ -224,7 +224,6 @@ class Evaluator:
     }
     
     if self._log_file is None:
-        # Create results directory if it doesn't exist
         results_dir = 'results'
         os.makedirs(results_dir, exist_ok=True)
         
@@ -237,7 +236,6 @@ class Evaluator:
     if scores_per_test:
       self._database.register_program(new_function, island_id, scores_per_test)
 
-    ##automate this 
     if(self._function_name == "move" and sum(scores_per_test.values()) == 4):
         return 1
     elif(self._function_name == "use" and sum(scores_per_test.values()) == 2):
