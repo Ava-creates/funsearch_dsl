@@ -21,12 +21,20 @@ import torch
 import requests
 import os
 from datetime import datetime
-
+from google import genai
 from funsearch.implementation import evaluator
 from funsearch.implementation import programs_database
 
 import ast
 import textwrap
+import re
+
+def extract_code_block(text):
+    """Extracts the first Python code block enclosed in triple backticks."""
+    match = re.search(r"```python(.*?)```", text, re.DOTALL)
+    return match.group(1) if match else None
+
+client = genai.Client()
 
 def is_reward_hacking_from_body(code_body: str) -> bool:
     code_wrapped = f"def dummy():\n{textwrap.indent(code_body, '    ')}"
@@ -70,7 +78,6 @@ def is_reward_hacking_from_body(code_body: str) -> bool:
         if not env_step_found:
             return True
 
-        # Check return statements
         for node in ast.walk(func_node):
             if isinstance(node, ast.Return):
                 if isinstance(node.value, (ast.Constant, ast.Num, ast.Str, ast.List, ast.Tuple)):
@@ -94,15 +101,15 @@ class LLM:
     self.tokenizer = tokenizer
     self.model_type = model_type
     self.stop_tokens = ["\ndef", "\nclass", "\n#", "\nimport"]
-    local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
+    # local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
 
-    self.tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
-    self.model = AutoModelForCausalLM.from_pretrained(
-    local_model_path,
-    device_map="auto",             # automatically selects GPUs if available
-    torch_dtype=torch.float16,     # for large models like 32B
-    trust_remote_code=True
-)
+#     self.tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
+#     self.model = AutoModelForCausalLM.from_pretrained(
+#     local_model_path,
+#     device_map="auto",             # automatically selects GPUs if available
+#     torch_dtype=torch.float16,     # for large models like 32B
+#     trust_remote_code=True
+# )
 
   def _draw_sample(self, prompt: str) -> str:
     """Returns a predicted continuation of `prompt`."""
@@ -120,7 +127,6 @@ class LLM:
               pad_token_id=self.tokenizer.eos_token_id,
               eos_token_id=self.tokenizer.eos_token_id,
           )
-          print()
           generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
           
           continuation = generated_text[len(prompt):]
@@ -135,17 +141,26 @@ class LLM:
       except Exception as e:
         print(f"Error in Hugging Face generation: {e}")
         return "return [0]"
+    elif self.model_type == 'gemini':
+            prompt = "You must act as a code completion model that is completing the last function. Please only return code that will fit in that function. Do not imports or add the function signature on the top. Return only the code that will be inside the function." + prompt
+            response = client.models.generate_content(
+                  model="gemini-2.5-flash", contents = prompt
+              )
+
+            b = response.text
+            if "```python" in b:
+              b = extract_code_block(response.text)
+            print("post extract", b)
+
+            return b 
+
     else:  # ollama
-      system = """You are an expert in solving tasks some simulation environments using programmatic strategies. You will be given the details on the simulation environment (in the form of its code base), a domain-specific language (DSL) that is designed to solve the task in a compositional way, and you will be asked to come up with the implementation of specific functions in the DSL to using the provided code base. You are safe to assume that other than the function we ask you to implement, the rest of the constructs in the DSL are already implemented properly. 
-        ## Code base for the game
-        The code base contains the following information:
-        - Classes: Each class includes informations about data attributes, class constructors and functions. We also provide information about the inputs to the constructors, and inputs, outputs and type signatures of the functions. 
-        - Functions: These are functions that do not belong to any class. We provide the input, output and the type signatures of the functions."""
       print("going in the llm")
+      # prompt = "Only return the code completion of the function and nothing outside of this fucntion body followed by '''python tag.\n" + prompt 
       api_url = "http://129.128.243.184:11434/api/generate"
       headers = {"Content-Type": "application/json"}
       try:
-        while True:
+        # while True:
             payload = {
               "model": "qwen2.5-coder:32b", 
               "prompt": prompt, 
@@ -156,12 +171,9 @@ class LLM:
                 "stop": self.stop_tokens
               }
             }
-            res = requests.post(api_url, headers=headers, json=payload, timeout=300)
-            # print(res)
-            if not is_reward_hacking_from_body(res.json()["response"]):
-              break
-
-        return res.json()["response"]
+            response = requests.post(api_url, headers=headers, json=payload, timeout=300)
+            b = response.json()["response"]
+            return b
       except Exception as e:
         print(f"Error in Ollama generation: {e}")
         return "return [0]"

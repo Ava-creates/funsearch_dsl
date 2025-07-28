@@ -184,7 +184,7 @@ class Evaluator:
     self._function_to_evolve = function_to_evolve
     self._function_to_run = function_to_run
     self._inputs = inputs
-    self._timeout_seconds = 90
+    self._timeout_seconds = 300 #100 sec for each env difficulty
     self._function_name = function_name
     self._sandbox = Sandbox()
     self._log_file = None  # Will be initialized on first use
@@ -206,6 +206,7 @@ class Evaluator:
       test_output, runs_ok = self._sandbox.run(
           program, self._function_to_run, current_input, self._timeout_seconds)
       print("runs_ok:", runs_ok)
+      print("test_output", test_output)
       if(runs_ok == False):
         scores_per_test[current_input] = -1
       if (runs_ok and not _calls_ancestor(program, self._function_to_evolve)
@@ -228,7 +229,7 @@ class Evaluator:
         os.makedirs(results_dir, exist_ok=True)
         
         current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        self._log_file = os.path.join(results_dir, f'program_registration_{current_date}_{self._function_name}_and_60_sec.log')
+        self._log_file = os.path.join(results_dir, f'qwen_2.5_collect_{current_date}_{self._function_name}_and_60_sec.log')
     
     with open(self._log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
@@ -240,7 +241,7 @@ class Evaluator:
         return 1
     elif(self._function_name == "use" and sum(scores_per_test.values()) == 2):
         return 1
-    elif(self._function_name == "craft" and sum(scores_per_test.values())  == 1.5):
+    elif(self._function_name == "craft" and sum(scores_per_test.values())  == 1):
         return 1
     else:
       return 0 

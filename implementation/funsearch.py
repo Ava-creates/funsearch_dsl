@@ -69,7 +69,7 @@ class FunSearch:
                 torch_dtype=torch.float16,
                 device_map="auto",
             )
-        else:  # ollama
+        else:  
             self.model = None
             self.tokenizer = None
 
@@ -154,7 +154,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--spec_file', type=str, required=True, help='Path to specification file')
     parser.add_argument('--function', type=str, required=True, help='Name of function to implement')
-    parser.add_argument('--model_type', type=str, choices=['huggingface', 'ollama'], 
+    parser.add_argument('--model_type', type=str, choices=['huggingface', 'ollama', "gemini"], 
                        default='huggingface', help='Choose between huggingface or ollama models')
     args = parser.parse_args()
 
