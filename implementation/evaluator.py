@@ -200,6 +200,8 @@ class Evaluator:
     new_function, program = _sample_to_program(
         sample, version_generated, self._template, self._function_to_evolve)
     # print("program ", program)
+    if new_function = "":
+      return 0
     scores_per_test = {}
     print("function to run", self._function_to_run)
     for current_input in self._inputs:
