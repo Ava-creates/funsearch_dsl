@@ -162,7 +162,7 @@ class LLM:
       try:
         # while True:
             payload = {
-              "model": "qwen2.5-coder:32b", 
+              "model": "qwen3-coder:30b", 
               "prompt": prompt, 
               "template": "{{.Prompt}}",
               "stream": False, 

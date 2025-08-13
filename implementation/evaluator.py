@@ -200,7 +200,7 @@ class Evaluator:
     new_function, program = _sample_to_program(
         sample, version_generated, self._template, self._function_to_evolve)
     # print("program ", program)
-    if new_function = "":
+    if new_function == "":
       return 0
     scores_per_test = {}
     print("function to run", self._function_to_run)
@@ -243,8 +243,10 @@ class Evaluator:
         return 1
     elif(self._function_name == "use" and sum(scores_per_test.values()) == 2):
         return 1
-    elif(self._function_name == "craft" and sum(scores_per_test.values())  == 1):
+    elif(self._function_name == "craft" and sum(scores_per_test.values())  == 1.5):
         return 1
+    elif(self._function_name == "collect" and sum(scores_per_test.values())  == 1.5 ):
+        return 1 
     else:
       return 0 
 
