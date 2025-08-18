@@ -35,7 +35,6 @@ def extract_code_block(text):
     return match.group(1) if match else None
 
 
-
 def is_reward_hacking_from_body(code_body: str) -> bool:
     code_wrapped = f"def dummy():\n{textwrap.indent(code_body, '    ')}"
     try:
@@ -97,19 +96,19 @@ class LLM:
 
   def __init__(self, samples_per_prompt: int, model=None, tokenizer=None, model_type='ollama') -> None:
     self._samples_per_prompt = samples_per_prompt
-    self.model = model
     self.tokenizer = tokenizer
     self.model_type = model_type
     self.stop_tokens = ["\ndef", "\nclass", "\n#", "\nimport"]
-    # local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
+    if self.model_type == "huggingface":
+      local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
 
-#     self.tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
-#     self.model = AutoModelForCausalLM.from_pretrained(
-#     local_model_path,
-#     device_map="auto",             # automatically selects GPUs if available
-#     torch_dtype=torch.float16,     # for large models like 32B
-#     trust_remote_code=True
-# )
+      self.tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
+      self.model = AutoModelForCausalLM.from_pretrained(
+      local_model_path,
+      device_map="auto",             # automatically selects GPUs if available
+      torch_dtype=torch.float16,     # for large models like 32B
+      trust_remote_code=True
+  )
 
   def _draw_sample(self, prompt: str) -> str:
     """Returns a predicted continuation of `prompt`."""
@@ -142,7 +141,6 @@ class LLM:
         print(f"Error in Hugging Face generation: {e}")
         return "return [0]"
     elif self.model_type == 'gemini':
-            client = genai.Client()
             prompt = "You must act as a code completion model that is completing the last function. Please only return code that will fit in that function. Do not imports or add the function signature on the top. Return only the code that will be inside the function." + prompt
             response = client.models.generate_content(
                   model="gemini-2.5-flash", contents = prompt
@@ -163,7 +161,7 @@ class LLM:
       try:
         # while True:
             payload = {
-              "model": "qwen3-coder:30b", 
+              "model": "qwen2.5-coder:32b", 
               "prompt": prompt, 
               "template": "{{.Prompt}}",
               "stream": False, 
@@ -192,13 +190,13 @@ class Sampler:
       database: programs_database.ProgramsDatabase,
       evaluators: Sequence[evaluator.Evaluator],
       samples_per_prompt: int,
-      model=None,
       tokenizer=None,
       model_type="ollama"
   ) -> None:
     self._database = database
     self._evaluators = evaluators
-    self._llm = LLM(samples_per_prompt, model=model, tokenizer=tokenizer, model_type=model_type)
+    self.model_type = model_type
+    self._llm = LLM(samples_per_prompt, tokenizer=tokenizer, model_type=model_type)
 
   def _get_function_signature(self, function_name: str) -> str:
     """Reads the function signature from the corresponding txt file."""
@@ -219,7 +217,9 @@ class Sampler:
     n=0
     best_samples=[]
     f = 0
-    while n<1000:
+    if self.model_type == "gemini":
+      client = genai.Client()
+    while n<500:
       prompt = self._database.get_prompt()
       # print(prompt)
       samples = self._llm.draw_samples(prompt.code)

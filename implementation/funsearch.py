@@ -145,7 +145,7 @@ class FunSearch:
         evaluators[0].analyse(initial, island_id=None, version_generated=None)
 
         samplers = [sampler.Sampler(database, evaluators, config.samples_per_prompt, 
-                                model=self.model, tokenizer=self.tokenizer, model_type=self.model_type)
+                             tokenizer=self.tokenizer, model_type=self.model_type)
                     for _ in range(config.num_samplers)]
 
         for s in samplers:
