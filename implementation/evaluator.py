@@ -173,6 +173,7 @@ class Evaluator:
       self,
       database: programs_database.ProgramsDatabase,
       template: code_manipulation.Program,
+      model_name: str,
       function_to_evolve: str,
       function_to_run: str,
       inputs: Sequence[Any],
@@ -188,6 +189,7 @@ class Evaluator:
     self._function_name = function_name
     self._sandbox = Sandbox()
     self._log_file = None  # Will be initialized on first use
+    self._model_name = model_name
 
   def analyse(
       self,
@@ -231,7 +233,7 @@ class Evaluator:
         os.makedirs(results_dir, exist_ok=True)
         
         current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        self._log_file = os.path.join(results_dir, f'qwen_2.5_collect_{current_date}_{self._function_name}_and_60_sec.log')
+        self._log_file = os.path.join(results_dir, f'{self._model_name}_q3_{current_date}_{self._function_name}.log')
     
     with open(self._log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')

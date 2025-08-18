@@ -134,6 +134,7 @@ class FunSearch:
             evaluators.append(evaluator.Evaluator(
                 database,
                 template,
+                self.model_type,
                 function_to_evolve,
                 function_to_run,
                 inputs,
