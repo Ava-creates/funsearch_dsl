@@ -93,7 +93,29 @@ class FunSearch:
         except FileNotFoundError:
             return "return []"
 
-    def _replace_function_in_specification(self, specification: str, function_name: str) -> str:
+    def _init_function_from_file(self, function_name: str) -> tuple[str, str]:
+        """Read function implementation and function to run from a file named after the function.
+        
+        Args:
+            function_name: Name of the function to read
+            
+        Returns:
+            A tuple containing:
+            - The function implementation as a string
+            - The function to run as a string
+        """
+        try:
+            function_name = function_name.lower()
+            print(function_name)
+            with open(function_name, 'r') as f:
+                content = f.read()
+                function_body = content
+                function_to_run = function_name
+                return function_body
+        except FileNotFoundError:
+            return "return []"
+
+    def _replace_function_in_specification(self, specification: str, function_name: str, function_init:str) -> str:
         """Replace or add a function in the specification.
         
         Args:
@@ -106,13 +128,13 @@ class FunSearch:
         # Read function implementation from file
         function_body = self._read_function_from_file(function_name)
         
-#         # Create the new function with decorator
-#         new_function = f"""@funsearch.evolve
-# {function_body}
-# """
-        return specification + "\n" + function_body
+        function_init = self._init_function_from_file(function_init)
+        function_init = function_init[function_init.index("def craft(env, item):")+21:]
+        dedented = textwrap.dedent(function_init)
+        indented_function = textwrap.indent(dedented, '  ')
+        return specification + "\n" + function_body + "\n" +indented_function
 
-    def run(self, specification: str, inputs: Sequence[Any], config: config_lib.Config, function_to_implement: str = None):
+    def run(self, specification: str, inputs: Sequence[Any], config: config_lib.Config, function_to_implement: str = None, function_init: str = None):
         """Run the FunSearch experiment.
         
         Args:
@@ -122,7 +144,7 @@ class FunSearch:
             function_to_implement: Name of the function to implement
         """
         
-        specification = self._replace_function_in_specification(specification, function_to_implement)
+        specification = self._replace_function_in_specification(specification, function_to_implement, function_init)
         print(specification)
         function_to_evolve, function_to_run = _extract_function_names(specification)
         template = code_manipulation.text_to_program(specification)
@@ -155,18 +177,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--spec_file', type=str, required=True, help='Path to specification file')
     parser.add_argument('--function', type=str, required=True, help='Name of function to implement')
+    parser.add_argument('--function_init', type=str, required=True, help='the file with start implementatino of the function')
     parser.add_argument('--model_type', type=str, choices=['huggingface', 'ollama', "gemini"], 
                        default='huggingface', help='Choose between huggingface or ollama models')
     args = parser.parse_args()
 
-    # Read specification from file
     with open(args.spec_file, 'r') as f:
         specification = f.read()
     
-    # Define your inputs and config
     inputs = [3]
     config = config_lib.Config()
 
-    # Create FunSearch instance and run
     funsearch = FunSearch(model_type=args.model_type)
-    funsearch.run(specification, inputs, config, args.function)
+    funsearch.run(specification, inputs, config, args.function, args.function_init)

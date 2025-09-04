@@ -233,7 +233,7 @@ class Evaluator:
         os.makedirs(results_dir, exist_ok=True)
         
         current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        self._log_file = os.path.join(results_dir, f'{self._model_name}_q3_{current_date}_{self._function_name}.log')
+        self._log_file = os.path.join(results_dir, f'{self._model_name}_q2.5_{current_date}_{self._function_name}.log')
     
     with open(self._log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
@@ -245,7 +245,7 @@ class Evaluator:
         return 1
     elif(self._function_name == "use" and sum(scores_per_test.values()) == 2):
         return 1
-    elif(self._function_name == "craft" and sum(scores_per_test.values())  == 1.5):
+    elif( "craft" in self._function_name and sum(scores_per_test.values())  >= 1):
         return 1
     elif(self._function_name == "collect" and sum(scores_per_test.values())  == 1.5 ):
         return 1 
