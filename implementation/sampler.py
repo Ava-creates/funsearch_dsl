@@ -228,13 +228,13 @@ class Sampler:
         chosen_evaluator = np.random.choice(self._evaluators)
         best = chosen_evaluator.analyse(
             sample, prompt.island_id, prompt.version_generated)
-        if(best == 1):
-          best_samples.append(sample)
-        if(len(best_samples) >= 5):
-          f = 1
-          break
-      if(f == 1):
-        break
+      #   if(best == 1):
+      #     best_samples.append(sample)
+      #   if(len(best_samples) >= 5):
+      #     f = 1
+      #     break
+      # if(f == 1):
+      #   break
     
     # Log best samples to file
     if best_samples:
