@@ -24,6 +24,8 @@ import subprocess
 from typing import Any, Tuple
 import json
 from datetime import datetime
+import time
+import threading
 
 from funsearch.implementation import code_manipulation
 from funsearch.implementation import programs_database
@@ -108,26 +110,29 @@ class Sandbox:
             - The function's output
             - Boolean indicating successful execution
             """
-        # with tempfile.TemporaryDirectory() as temp_dir:
+            # Create unique filename using process ID and timestamp
             temp_dir = os.getcwd()
-            script_path = os.path.join(temp_dir, 'generated_code.py')
+            unique_id = f"{os.getpid()}_{int(time.time() * 1000000)}"
+            script_path = f'generated_code_{unique_id}.py'
+            script_path = os.path.join(temp_dir, script_path)
+
             
             # Create complete executable program
             full_program = f"""
 {program} 
 print({function_to_run}())
-                          """
-            # print(full_program)
-            with open(script_path, 'w') as f:
-                f.write(full_program.strip())
-
+            """
+            
             try:
+                with open(script_path, 'w') as f:
+                    f.write(full_program.strip())
+
                 # Convert input to string representation
                 input_str = str(test_input)
                 
                 # Execute in subprocess with timeout
                 result = subprocess.run(
-                    ['python', script_path],
+                    ['python3', script_path],
                     capture_output=True,
                     text=True,
                     timeout=timeout_seconds,
@@ -143,7 +148,7 @@ print({function_to_run}())
                     return float(output), True
                 except ValueError:
                     return -1, True
-                
+                    
             except subprocess.TimeoutExpired:
                 return -1, False
             except subprocess.CalledProcessError as e:
@@ -152,6 +157,10 @@ print({function_to_run}())
                 print(f"Output: {e.stdout}")
                 print(f"Error: {e.stderr}")
                 return -1, False
+            finally:
+                # Clean up the temporary file
+                if os.path.exists(script_path):
+                    os.remove(script_path)
 
 
 def _calls_ancestor(program: str, function_to_evolve: str) -> bool:
@@ -176,9 +185,10 @@ class Evaluator:
       model_name: str,
       function_to_evolve: str,
       function_to_run: str,
-      inputs: Sequence[Any],
-      function_name: str
-      
+      inputs,
+      function_to_init, 
+      specification,
+      function_name
   ):
     self._database = database
     self._template = template
@@ -190,6 +200,8 @@ class Evaluator:
     self._sandbox = Sandbox()
     self._log_file = None  # Will be initialized on first use
     self._model_name = model_name
+    self._function_init = function_to_init
+    self.specification = specification
 
   def analyse(
       self,
@@ -233,7 +245,7 @@ class Evaluator:
         os.makedirs(results_dir, exist_ok=True)
         
         current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        self._log_file = os.path.join(results_dir, f'{self._model_name}_q2.5_{current_date}_{self._function_name}.log')
+        self._log_file = os.path.join(results_dir, f'{self._model_name}_q2.5_{self._function_name}_{self._function_init}_{self.specification.replace("/", "")}_{current_date}.log')
     
     with open(self._log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')

@@ -134,7 +134,7 @@ class FunSearch:
         indented_function = textwrap.indent(dedented, '  ')
         return specification + "\n" + function_body + "\n" +indented_function
 
-    def run(self, specification: str, inputs: Sequence[Any], config: config_lib.Config, function_to_implement: str = None, function_init: str = None):
+    def run(self, specification: str, inputs: Sequence[Any], config: config_lib.Config, function_to_implement, function_init, spec_file):
         """Run the FunSearch experiment.
         
         Args:
@@ -145,7 +145,7 @@ class FunSearch:
         """
         
         specification = self._replace_function_in_specification(specification, function_to_implement, function_init)
-        print(specification)
+        # print(specification)
         function_to_evolve, function_to_run = _extract_function_names(specification)
         template = code_manipulation.text_to_program(specification)
         database = programs_database.ProgramsDatabase(
@@ -160,6 +160,8 @@ class FunSearch:
                 function_to_evolve,
                 function_to_run,
                 inputs,
+                function_init, 
+                spec_file,
                 function_name=function_to_implement
             ))
         # We send the initial implementation to be analysed by one of the evaluators.
@@ -189,4 +191,4 @@ if __name__ == "__main__":
     config = config_lib.Config()
 
     funsearch = FunSearch(model_type=args.model_type)
-    funsearch.run(specification, inputs, config, args.function, args.function_init)
+    funsearch.run(specification, inputs, config, args.function, args.function_init, args.spec_file)
