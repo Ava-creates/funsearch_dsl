@@ -158,7 +158,11 @@ class LLM:
       # prompt = "Only return the code completion of the function and nothing outside of this fucntion body followed by '''python tag.\n" + prompt 
       api_url = "http://129.128.243.184:11434/api/generate"
       headers = {"Content-Type": "application/json"}
+      # print(prompt)
       try:
+        #qwen2.5-coder:32b
+        #gpt-oss:latest
+            prompt = "Act as a code completion model and return only the function code for the version you aremeant to complete"+ prompt
         # while True:
             payload = {
               "model": "qwen2.5-coder:32b", 
@@ -171,7 +175,9 @@ class LLM:
               }
             }
             response = requests.post(api_url, headers=headers, json=payload, timeout=300)
+            # print(response)
             b = response.json()["response"]
+            print(b)
             return b
       except Exception as e:
         print(f"Error in Ollama generation: {e}")

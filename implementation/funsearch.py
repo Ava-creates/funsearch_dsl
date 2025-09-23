@@ -125,11 +125,16 @@ class FunSearch:
         Returns:
             Modified specification string
         """
-        # Read function implementation from file
+        print(function_name)
         function_body = self._read_function_from_file(function_name)
-        
+        print(function_body)
         function_init = self._init_function_from_file(function_init)
-        function_init = function_init[function_init.index("def craft(env, item):")+21:]
+        if function_name == "craft":
+            function_init = function_init[function_init.index("def craft(env, item):")+21:]
+        if function_name=="collect":
+            function_init = function_init[function_init.index("def collect(env, primitive):")+28:]
+
+            
         dedented = textwrap.dedent(function_init)
         indented_function = textwrap.indent(dedented, '  ')
         return specification + "\n" + function_body + "\n" +indented_function
@@ -145,7 +150,7 @@ class FunSearch:
         """
         
         specification = self._replace_function_in_specification(specification, function_to_implement, function_init)
-        # print(specification)
+        print(specification)
         function_to_evolve, function_to_run = _extract_function_names(specification)
         template = code_manipulation.text_to_program(specification)
         database = programs_database.ProgramsDatabase(
