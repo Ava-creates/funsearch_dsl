@@ -133,8 +133,8 @@ class FunSearch:
             function_init = function_init[function_init.index("def craft(env, item):")+21:]
         if function_name=="collect":
             function_init = function_init[function_init.index("def collect(env, primitive):")+28:]
-
-            
+        else:
+            function_init = function_init[function_init.index("def make_arrow(env):")+20:]
         dedented = textwrap.dedent(function_init)
         indented_function = textwrap.indent(dedented, '  ')
         return specification + "\n" + function_body + "\n" +indented_function

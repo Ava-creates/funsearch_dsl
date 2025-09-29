@@ -121,7 +121,7 @@ class Sandbox:
             full_program = f"""
 {program} 
 print({function_to_run}())
-            """
+          """
             
             try:
                 with open(script_path, 'w') as f:
