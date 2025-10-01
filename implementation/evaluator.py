@@ -241,11 +241,11 @@ class Evaluator:
     }
     
     if self._log_file is None:
-        results_dir = 'results'
+        results_dir = 'results/funsearch'
         os.makedirs(results_dir, exist_ok=True)
         
         current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        self._log_file = os.path.join(results_dir, f'{self._model_name}_q2.5_{self._function_name}_{self._function_init}_{self.specification.replace("/", "")}_{current_date}.log')
+        self._log_file = os.path.join(results_dir, f'{self._model_name}_q2.5_{self._function_name}_{self._function_init.replace("/",":")}_{self.specification.replace("/", "")}_{current_date}.log')
     
     with open(self._log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')

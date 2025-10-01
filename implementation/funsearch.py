@@ -85,6 +85,8 @@ class FunSearch:
             - The function to run as a string
         """
         try:
+            function_name = "function_specific_prompts/"+ function_name
+
             with open(f"{function_name}.txt", 'r') as f:
                 content = f.read()
                 function_body = content
@@ -106,7 +108,7 @@ class FunSearch:
         """
         try:
             function_name = function_name.lower()
-            print(function_name)
+
             with open(function_name, 'r') as f:
                 content = f.read()
                 function_body = content
@@ -125,9 +127,9 @@ class FunSearch:
         Returns:
             Modified specification string
         """
-        print(function_name)
+        # print(function_name)
         function_body = self._read_function_from_file(function_name)
-        print(function_body)
+        # print(function_body)
         function_init = self._init_function_from_file(function_init)
         if function_name == "craft":
             function_init = function_init[function_init.index("def craft(env, item):")+21:]
@@ -150,7 +152,7 @@ class FunSearch:
         """
         
         specification = self._replace_function_in_specification(specification, function_to_implement, function_init)
-        print(specification)
+        # print(specification)
         function_to_evolve, function_to_run = _extract_function_names(specification)
         template = code_manipulation.text_to_program(specification)
         database = programs_database.ProgramsDatabase(

@@ -29,6 +29,21 @@ import ast
 import textwrap
 import re
 
+def extract_between_dollars(text: str) -> str:
+    """
+    Extracts the substring between the first pair of $$ ... $$.
+    Returns an empty string if not found.
+    """
+    start = text.find("$$")
+    if start == -1:
+        text = textwrap.dedent(text).strip()
+        return text
+    end = text.find("$$", start + 2)
+    if end == -1:
+        return text
+    
+    return text[start + 2:end].strip()
+
 def extract_code_block(text):
     """Extracts the first Python code block enclosed in triple backticks."""
     match = re.search(r"```python(.*?)```", text, re.DOTALL)
@@ -98,7 +113,7 @@ class LLM:
     self._samples_per_prompt = samples_per_prompt
     self.tokenizer = tokenizer
     self.model_type = model_type
-    self.stop_tokens = ["\ndef", "\nclass", "\n#", "\nimport"]
+    self.stop_tokens = ["\ndef", "\nclass", "\n#"]
     if self.model_type == "huggingface":
       local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
 
@@ -160,23 +175,33 @@ class LLM:
       headers = {"Content-Type": "application/json"}
       # print(prompt)
       try:
-        #qwen2.5-coder:32b
-        #gpt-oss:latest
-            prompt = "Act as a code completion model and return only the function code for the version you aremeant to complete"+ prompt
-        # while True:
+            #qwen2.5-coder:32b
+            #gpt-oss:latest
+            instruction = (
+            "Act as a code completion model. "
+            "Return only the function body of the most recent function definition (after its `def func_vn():` line). "
+            "Do not include the `def func_vn():` line itself. "
+            "Do not generate or suggest earlier versions (e.g., `collect_v0`, `collect_v1`, etc.). "
+            "Only provide the body of the latest function exactly as written. "
+            "Wrap the output inside `$$`. "
+            "Example: `def func_v3():$ return None$` → output should be `$$return None$$`."
+            )
+            prompt = f"{prompt}/n/n{instruction}"
+          
             payload = {
-              "model": "qwen2.5-coder:32b", 
+              "model": "gpt-oss:latest", 
               "prompt": prompt, 
               "template": "{{.Prompt}}",
               "stream": False, 
               "options": {
                 "num_ctx": 4096, 
-                "stop": self.stop_tokens
+                # "stop": self.stop_tokens
               }
             }
-            response = requests.post(api_url, headers=headers, json=payload, timeout=300)
+            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
             # print(response)
-            b = response.json()["response"]
+            b = extract_between_dollars(response.json()["response"])
+            b = textwrap.dedent(b).strip()
             print(b)
             return b
       except Exception as e:
