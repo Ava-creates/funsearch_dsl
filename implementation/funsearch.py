@@ -14,42 +14,40 @@
 # ==============================================================================
 
 """A single-threaded implementation of the FunSearch pipeline."""
+import os
+import argparse
 from collections.abc import Sequence
-from typing import Any, List
+from typing import Any
 import textwrap
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from funsearch.implementation import code_manipulation
 from funsearch.implementation import config as config_lib
 from funsearch.implementation import evaluator
 from funsearch.implementation import programs_database
 from funsearch.implementation import sampler
-from transformers import AutoTokenizer, AutoModelForCausalLM
-import torch
-import os
-import argparse
-import re
+
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
 def _extract_function_names(specification: str) -> tuple[str, str]:
-  """Returns the name of the function to evolve and of the function to run."""
-  run_functions = list(
-      code_manipulation.yield_decorated(specification, 'funsearch', 'run'))
-  if len(run_functions) != 1:
-    raise ValueError('Expected 1 function decorated with `@funsearch.run`.')
-  evolve_functions = list(
-      code_manipulation.yield_decorated(specification, 'funsearch', 'evolve'))
-  if len(evolve_functions) != 1:
-    raise ValueError('Expected 1 function decorated with `@funsearch.evolve`.')
-  return evolve_functions[0], run_functions[0]
-
+    """Returns the name of the function to evolve and of the function to run."""
+    run_functions = list(
+        code_manipulation.yield_decorated(specification, 'funsearch', 'run'))
+    if len(run_functions) != 1:
+        raise ValueError('Expected 1 function decorated with `@funsearch.run`.')
+    evolve_functions = list(
+        code_manipulation.yield_decorated(specification, 'funsearch', 'evolve'))
+    if len(evolve_functions) != 1:
+        raise ValueError('Expected 1 function decorated with `@funsearch.evolve`.')
+    return evolve_functions[0], run_functions[0]
 
 
 class FunSearch:
     """A class that implements the FunSearch pipeline."""
-    
+
     def __init__(self, model_type: str = 'huggingface', model_path: str = "/scratch/avani/qwen"):
         """Initialize FunSearch with model configuration.
-        
         Args:
             model_type: Type of model to use ('huggingface' or 'ollama')
             model_path: Path to the model (for huggingface models)
@@ -59,7 +57,7 @@ class FunSearch:
         self.model = None
         self.tokenizer = None
         # self._initialize_model()
-    
+
     def _initialize_model(self):
         """Initialize the model and tokenizer based on model_type."""
         if self.model_type == 'huggingface':
@@ -67,15 +65,13 @@ class FunSearch:
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_path,
                 torch_dtype=torch.float16,
-                device_map="auto",
-            )
-        else:  
+                device_map="auto")
+        else:
             self.model = None
             self.tokenizer = None
 
     def _read_function_from_file(self, function_name: str) -> tuple[str, str]:
         """Read function implementation and function to run from a file named after the function.
-        
         Args:
             function_name: Name of the function to read
             
@@ -85,9 +81,8 @@ class FunSearch:
             - The function to run as a string
         """
         try:
-            function_name = "function_specific_prompts/"+ function_name
-
-            with open(f"{function_name}.txt", 'r') as f:
+            # function_name = "function_specific_prompts/"+ function_name
+            with open(function_name, 'r',  encoding='utf-8') as f:
                 content = f.read()
                 function_body = content
                 function_to_run = function_name
@@ -109,7 +104,7 @@ class FunSearch:
         try:
             function_name = function_name.lower()
 
-            with open(function_name, 'r') as f:
+            with open(function_name, 'r',  encoding='utf-8') as f:
                 content = f.read()
                 function_body = content
                 function_to_run = function_name
@@ -131,26 +126,19 @@ class FunSearch:
         function_body = self._read_function_from_file(function_name)
         # print(function_body)
         function_init = self._init_function_from_file(function_init)
-        if function_name == "craft":
-            function_init = function_init[function_init.index("def craft(env, item):")+21:]
-        if function_name=="collect":
-            function_init = function_init[function_init.index("def collect(env, primitive):")+28:]
-        else:
-            function_init = function_init[function_init.index("def make_arrow(env):")+20:]
+        function_init = function_init[function_init.index(":")+1:]
         dedented = textwrap.dedent(function_init)
         indented_function = textwrap.indent(dedented, '  ')
         return specification + "\n" + function_body + "\n" +indented_function
 
     def run(self, specification: str, inputs: Sequence[Any], config: config_lib.Config, function_to_implement, function_init, spec_file):
         """Run the FunSearch experiment.
-        
         Args:
             specification: The specification string containing the functions to evolve and run
             inputs: Sequence of inputs to test the evolved function
             config: Configuration for the experiment
             function_to_implement: Name of the function to implement
         """
-        
         specification = self._replace_function_in_specification(specification, function_to_implement, function_init)
         # print(specification)
         function_to_evolve, function_to_run = _extract_function_names(specification)
@@ -167,7 +155,7 @@ class FunSearch:
                 function_to_evolve,
                 function_to_run,
                 inputs,
-                function_init, 
+                function_init,
                 spec_file,
                 function_name=function_to_implement
             ))
@@ -175,8 +163,8 @@ class FunSearch:
         initial = template.get_function(function_to_evolve).body
         evaluators[0].analyse(initial, island_id=None, version_generated=None)
 
-        samplers = [sampler.Sampler(database, evaluators, config.samples_per_prompt, 
-                             tokenizer=self.tokenizer, model_type=self.model_type)
+        samplers = [sampler.Sampler(database, evaluators, config.samples_per_prompt,
+        tokenizer=self.tokenizer, model_type=self.model_type)
                     for _ in range(config.num_samplers)]
 
         for s in samplers:
@@ -185,17 +173,16 @@ class FunSearch:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--spec_file', type=str, required=True, help='Path to specification file')
-    parser.add_argument('--function', type=str, required=True, help='Name of function to implement')
-    parser.add_argument('--function_init', type=str, required=True, help='the file with start implementatino of the function')
-    parser.add_argument('--model_type', type=str, choices=['huggingface', 'ollama', "gemini"], 
+    parser.add_argument('--func_file', type=str, required=True, help='Func txt file')
+    parser.add_argument('--func_init', type=str, required=True, help='the file with start implementatino of the function')
+    parser.add_argument('--model_type', type=str, choices=['huggingface', 'ollama', "gemini"],
                        default='huggingface', help='Choose between huggingface or ollama models')
     args = parser.parse_args()
 
-    with open(args.spec_file, 'r') as f:
+    with open(args.spec_file, 'r',  encoding='utf-8') as f:
         specification = f.read()
-    
     inputs = [3]
     config = config_lib.Config()
 
     funsearch = FunSearch(model_type=args.model_type)
-    funsearch.run(specification, inputs, config, args.function, args.function_init, args.spec_file)
+    funsearch.run(specification, inputs, config, args.func_file, args.func_init, args.spec_file)

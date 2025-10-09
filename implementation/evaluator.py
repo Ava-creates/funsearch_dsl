@@ -141,9 +141,14 @@ print({function_to_run}())
                     errors='replace'
                 )
                 
-                # Try to parse numerical output
                 output = result.stdout.strip()
-                print("output ", output)
+                result = ast.literal_eval(output)
+                print("result ", result)
+                # Access the values
+                output, actions_count = result
+                # Try to parse numerical output
+                # output = result.stdout.strip()
+                # print("output ", output)
                 try:
                     return float(output), True
                 except ValueError:
@@ -245,7 +250,7 @@ class Evaluator:
         os.makedirs(results_dir, exist_ok=True)
         
         current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-        self._log_file = os.path.join(results_dir, f'{self._model_name}_q2.5_{self._function_name}_{self._function_init.replace("/",":")}_{self.specification.replace("/", "")}_{current_date}.log')
+        self._log_file = os.path.join(results_dir, f'{self._model_name}_q2.5_{self._function_name.replace("/",":")}_{self._function_init.replace("/",":")}_{self.specification.replace("/", "")}_{current_date}.log')
     
     with open(self._log_file, 'a') as f:
         f.write(json.dumps(log_entry) + '\n')
