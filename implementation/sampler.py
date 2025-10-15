@@ -284,6 +284,7 @@ class Sampler:
       samples = self._llm.draw_samples(prompt.code)
       n+=1
       for sample in samples:
+        print(sample)
         chosen_evaluator = np.random.choice(self._evaluators)
         best = chosen_evaluator.analyse(
             sample, prompt.island_id, prompt.version_generated)
