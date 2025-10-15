@@ -127,7 +127,6 @@ class LLM:
       # device_map="auto",             # automatically selects GPUs if available
       # torch_dtype=torch.float16,     # for large models like 32B
       # trust_remote_code=True
-  )
 
   def _draw_sample(self, prompt: str) -> str:
     """Returns a predicted continuation of `prompt`."""
