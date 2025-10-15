@@ -16,6 +16,7 @@
 """Class for sampling new programs."""
 from collections.abc import Collection, Sequence
 import numpy as np
+import subprocess
 from vllm import SamplingParams
 from vllm import LLM as vLLM
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -117,7 +118,10 @@ class LLM:
     self.model_type = model_type
     self.stop_tokens = ["\ndef", "\nclass", "\n#"]
     if self.model_type == "huggingface":
-        lm = vLLM(model="/scratch/avani/gpt")
+        print("\n=== GPU STATUS (before loading model) ===")
+        subprocess.run(["nvidia-smi"])
+        print("=========================================\n")
+        llm = vLLM(model="/scratch/avani/gpt")
         params = SamplingParams(temperature=0.7, max_tokens=15000)
       # local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
 
