@@ -55,14 +55,14 @@ def _trim_function_body(generated_code: str) -> str:
   """Extracts the body of the generated function, trimming anything after it."""
   if not generated_code:
     return ''
-  code = f'def fake_function_header():\n{generated_code}'
+  # code = f'def fake_function_header():\n{generated_code}'
+  code = generated_code
   tree = None
   # We keep trying and deleting code from the end until the parser succeeds.
   while tree is None:
     try:
       tree = ast.parse(code)
     except SyntaxError as e:
-      print(e)
       code = '\n'.join(code.splitlines()[:e.lineno - 1])
   if not code:
     # Nothing could be saved from `generated_code`
