@@ -121,8 +121,8 @@ class LLM:
     #     print("\n=== GPU STATUS (before loading model) ===")
     #     subprocess.run(["nvidia-smi"])
     #     print("=========================================\n")
-        llm = vLLM(model="/scratch/avani/gpt",    tensor_parallel_size=4 )
-        params = SamplingParams(temperature=0.7, max_tokens=15000)
+        self.llm = vLLM(model="/scratch/avani/gpt",    tensor_parallel_size=4 )
+        self.params = SamplingParams(temperature=0.7, max_tokens=15000)
       # local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
 
       # self.tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
@@ -152,7 +152,7 @@ class LLM:
                 "Now return only the correct implementation of `make_stick` following these rules.'''
         prompt = prompt_addon + prompt
         
-        output = llm.generate(prompt, params)
+        output = self.llm.generate(prompt, params)
         response = output[0].outputs[0].text
         response = response[response.index("```python")+len("```python"):]
         response = response[:response.index("```")]
