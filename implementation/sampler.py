@@ -152,7 +152,7 @@ class LLM:
                 "Now return only the correct implementation of `make_stick` following these rules.'''
         prompt = prompt_addon + prompt
         
-        output = self.llm.generate(prompt, params)
+        output = self.llm.generate(prompt, self.params)
         response = output[0].outputs[0].text
         response = response[response.index("```python")+len("```python"):]
         response = response[:response.index("```")]
