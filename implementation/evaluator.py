@@ -140,28 +140,42 @@ print({function_to_run}())
                     encoding='utf-8',
                     errors='replace'
                 )
-                
+
                 output = result.stdout.strip()
+                # Convert numpy types to native Python types and parse as JSON
+                output = output.replace("np.float64", "")
+                output = output.replace("np.float32", "")
+                output = output.replace("(", "").replace(")", "")
                 result = ast.literal_eval(output)
-                print("result ", result)
+
                 # Access the values
-                output, actions_count = result
+                output, actions_count = result[0], result[1]
+                print("output ", output)
+                
+                # output = result.stdout.strip()
+                # result = ast.literal_eval(output)
+                # print("result ", result)
+                # # Access the values
+                # output, actions_count = result
                 # Try to parse numerical output
                 # output = result.stdout.strip()
                 # print("output ", output)
                 try:
-                    return float(output), True
+                    return float(output), True , actions_count
                 except ValueError:
-                    return -1, True
+                    return -1, True, 0
                     
             except subprocess.TimeoutExpired:
-                return -1, False
+                return -1, False, 0
             except subprocess.CalledProcessError as e:
                 print(f"Process Error: Command failed with exit code {e.returncode}")
                 print(f"Command: {e.cmd}")
                 print(f"Output: {e.stdout}")
                 print(f"Error: {e.stderr}")
-                return -1, False
+                return -1, False, 0
+            except Exception as e:
+                print(f"Unexpected Error: {e}")
+                return -1, False, 0 
             finally:
                 # Clean up the temporary file
                 if os.path.exists(script_path):
@@ -224,10 +238,11 @@ class Evaluator:
     scores_per_test = {}
     print("function to run", self._function_to_run)
     for current_input in self._inputs:
-      test_output, runs_ok = self._sandbox.run(
+      test_output, runs_ok, env_interactions = self._sandbox.run(
           program, self._function_to_run, current_input, self._timeout_seconds)
       print("runs_ok:", runs_ok)
       print("test_output", test_output)
+      print("env_interactions", env_interactions)
       if(runs_ok == False):
         scores_per_test[current_input] = -1
       if (runs_ok and not _calls_ancestor(program, self._function_to_evolve)
@@ -241,6 +256,7 @@ class Evaluator:
         'timestamp': datetime.now().isoformat(),
         'function_name': new_function.name,
         'function_body': new_function.body,
+        "env_interactions": actions_count,
         'island_id': island_id,
         'scores': scores_per_test
     }

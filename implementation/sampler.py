@@ -16,6 +16,8 @@
 """Class for sampling new programs."""
 from collections.abc import Collection, Sequence
 import numpy as np
+from vllm import SamplingParams
+from vllm import LLM as vLLM
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import requests
@@ -129,29 +131,45 @@ class LLM:
     """Returns a predicted continuation of `prompt`."""
     if self.model_type == 'huggingface':
       try:
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
-        while True:
+        llm = vLLM(model="/scratch/avani/gpt")
+        params = SamplingParams(temperature=0.7, max_tokens=15000)
+        prompt += "\n```python\n"
+                "   def make_stick(env):\n"
+                "2. Only output the complete function implementation inside the code block.\n\n"
+                "Example of correct response format:\n"
+                "```python\n"
+                "def make_stick(env):\n"
+                "    # your implementation here\n"
+                "```\n"
+                "Now return only the correct implementation of `make_stick` following these rules."
+        output = llm.generate(prompt, params)
+        response = output[0].outputs[0].text
+        response = response[response.index("```python")+len("```python"):]
+        response = response[:response.index("```")]
+        return response
+      #   inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+      #   while True:
           
-          outputs = self.model.generate(
-              **inputs,
-              max_new_tokens=512,
-              do_sample=True,
-              temperature=0.8,
-              top_p=0.9,
-              pad_token_id=self.tokenizer.eos_token_id,
-              eos_token_id=self.tokenizer.eos_token_id,
-          )
-          generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+      #     outputs = self.model.generate(
+      #         **inputs,
+      #         max_new_tokens=512,
+      #         do_sample=True,
+      #         temperature=0.8,
+      #         top_p=0.9,
+      #         pad_token_id=self.tokenizer.eos_token_id,
+      #         eos_token_id=self.tokenizer.eos_token_id,
+      #     )
+      #     generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
           
-          continuation = generated_text[len(prompt):]
+      #     continuation = generated_text[len(prompt):]
           
-          for stop_token in self.stop_tokens:
-            if stop_token in continuation:
-              continuation = continuation.split(stop_token)[0]
-          print("continuation", continuation)
-          if not is_reward_hacking_from_body(continuation):
-            break
-        return continuation
+      #     for stop_token in self.stop_tokens:
+      #       if stop_token in continuation:
+      #         continuation = continuation.split(stop_token)[0]
+      #     print("continuation", continuation)
+      #     if not is_reward_hacking_from_body(continuation):
+      #       break
+      #   return continuation
       except Exception as e:
         print(f"Error in Hugging Face generation: {e}")
         return "return [0]"
