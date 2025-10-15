@@ -62,6 +62,7 @@ def _trim_function_body(generated_code: str) -> str:
     try:
       tree = ast.parse(code)
     except SyntaxError as e:
+      print(e)
       code = '\n'.join(code.splitlines()[:e.lineno - 1])
   if not code:
     # Nothing could be saved from `generated_code`
@@ -80,9 +81,9 @@ def _sample_to_program(
     function_to_evolve: str,
 ) -> tuple[code_manipulation.Function, str]:
   """Returns the compiled generated function and the full runnable program."""
-  print(generated_code)
+  # print(generated_code)
   body = _trim_function_body(generated_code)
-  print(body)
+  # print(body)
   if version_generated is not None:
     body = code_manipulation.rename_function_calls(
         body,
@@ -179,7 +180,7 @@ print({function_to_run}())
             finally:
                 # Clean up the temporary file
                 if os.path.exists(script_path):
-                    # os.remove(script_path)
+                    os.remove(script_path)
 
 
 def _calls_ancestor(program: str, function_to_evolve: str) -> bool:

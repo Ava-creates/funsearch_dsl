@@ -137,30 +137,13 @@ class LLM:
     if self.model_type == 'huggingface':
       try:
 
-        prompt_addon = '''Your task:\n"
-                "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
-                "Formatting Requirements (do NOT ignore):\n"
-                "1. Your response MUST begin exactly like this:\n"
-                "   ```python\n"
-                "   def make_stick(env):\n"
-                "2. Only output the complete function implementation inside the code block.\n\n"
-                "Example of correct response format:\n"
-                "```python\n"
-                "def make_stick(env):\n"
-                "    # your implementation here\n"
-                "```\n"
-                "Now return only the correct implementation of `make_stick` following these rules.'''
-        prompt = prompt_addon + prompt
-        
+        prompt = "You must act as a code completion model that is completing the last function. Please only return code that will fit in that function. Do not imports or add the function signature on the top. Return only the code that will be inside the function." + prompt        
         output = self.llm.generate(prompt, self.params)
         response = output[0].outputs[0].text
-        response = response[response.index("```python")+len("```python"):]
-        response = response[:response.index("```")]
-        pattern = rf"^[ \t]*def\s+{re.escape('make_stick')}\s*\([^\)]*\)\s*:\s*\n"
-        m = re.search(pattern, response, flags=re.MULTILINE)
-        if not m:
-          return response
-        body = response[m.end():]
+        if "```python" in response:
+            response = extract_code_block(response)
+            print("post extract", response)
+
         return  response
   
       #   inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
