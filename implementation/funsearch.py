@@ -66,6 +66,9 @@ class FunSearch:
             #     self.model_path,
             #     torch_dtype=torch.float16,
             #     device_map="auto")
+            self.model = None
+            self.tokenizer = None
+
         else:
             self.model = None
             self.tokenizer = None
