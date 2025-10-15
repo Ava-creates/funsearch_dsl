@@ -156,7 +156,7 @@ class LLM:
         response = output[0].outputs[0].text
         response = response[response.index("```python")+len("```python"):]
         response = response[:response.index("```")]
-        pattern = rf"^[ \t]*def\s+{re.escape("make_stick")}\s*\([^\)]*\)\s*:\s*\n"
+  pattern = rf"^[ \t]*def\s+{re.escape('make_stick')}\s*\([^\)]*\)\s*:\s*\n"
         m = re.search(pattern, response, flags=re.MULTILINE)
         if not m:
           return response
