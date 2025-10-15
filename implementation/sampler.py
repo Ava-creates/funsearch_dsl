@@ -117,11 +117,11 @@ class LLM:
     self.tokenizer = tokenizer
     self.model_type = model_type
     self.stop_tokens = ["\ndef", "\nclass", "\n#"]
-    if self.model_type == "huggingface":
-        print("\n=== GPU STATUS (before loading model) ===")
-        subprocess.run(["nvidia-smi"])
-        print("=========================================\n")
-        llm = vLLM(model="/scratch/avani/gpt")
+    # if self.model_type == "huggingface":
+    #     print("\n=== GPU STATUS (before loading model) ===")
+    #     subprocess.run(["nvidia-smi"])
+    #     print("=========================================\n")
+        llm = vLLM(model="/scratch/avani/gpt",    tensor_parallel_size=4 )
         params = SamplingParams(temperature=0.7, max_tokens=15000)
       # local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
 
