@@ -117,22 +117,23 @@ class LLM:
     self.model_type = model_type
     self.stop_tokens = ["\ndef", "\nclass", "\n#"]
     if self.model_type == "huggingface":
-      local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
+        lm = vLLM(model="/scratch/avani/gpt")
+        params = SamplingParams(temperature=0.7, max_tokens=15000)
+      # local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
 
-      self.tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
-      self.model = AutoModelForCausalLM.from_pretrained(
-      local_model_path,
-      device_map="auto",             # automatically selects GPUs if available
-      torch_dtype=torch.float16,     # for large models like 32B
-      trust_remote_code=True
+      # self.tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
+      # self.model = AutoModelForCausalLM.from_pretrained(
+      # local_model_path,
+      # device_map="auto",             # automatically selects GPUs if available
+      # torch_dtype=torch.float16,     # for large models like 32B
+      # trust_remote_code=True
   )
 
   def _draw_sample(self, prompt: str) -> str:
     """Returns a predicted continuation of `prompt`."""
     if self.model_type == 'huggingface':
       try:
-        llm = vLLM(model="/scratch/avani/gpt")
-        params = SamplingParams(temperature=0.7, max_tokens=15000)
+
         prompt_addon = '''Your task:\n"
                 "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
                 "Formatting Requirements (do NOT ignore):\n"

@@ -256,7 +256,7 @@ class Evaluator:
         'timestamp': datetime.now().isoformat(),
         'function_name': new_function.name,
         'function_body': new_function.body,
-        "env_interactions": actions_count,
+        "env_interactions": env_interactions,
         'island_id': island_id,
         'scores': scores_per_test
     }
