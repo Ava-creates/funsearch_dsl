@@ -117,7 +117,7 @@ class LLM:
     self.tokenizer = tokenizer
     self.model_type = model_type
     self.stop_tokens = ["\ndef", "\nclass", "\n#"]
-    # if self.model_type == "huggingface":
+    if self.model_type == "huggingface":
     #     print("\n=== GPU STATUS (before loading model) ===")
     #     subprocess.run(["nvidia-smi"])
     #     print("=========================================\n")
