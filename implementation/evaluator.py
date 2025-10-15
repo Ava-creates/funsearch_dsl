@@ -62,6 +62,7 @@ def _trim_function_body(generated_code: str) -> str:
     try:
       tree = ast.parse(code)
     except SyntaxError as e:
+      print(e)
       code = '\n'.join(code.splitlines()[:e.lineno - 1])
   if not code:
     # Nothing could be saved from `generated_code`
