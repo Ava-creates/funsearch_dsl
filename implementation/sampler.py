@@ -133,7 +133,7 @@ class LLM:
       try:
         llm = vLLM(model="/scratch/avani/gpt")
         params = SamplingParams(temperature=0.7, max_tokens=15000)
-        prompt_addon = '""Your task:\n"
+        prompt_addon = '''Your task:\n"
                 "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
                 "Formatting Requirements (do NOT ignore):\n"
                 "1. Your response MUST begin exactly like this:\n"
@@ -145,7 +145,7 @@ class LLM:
                 "def make_stick(env):\n"
                 "    # your implementation here\n"
                 "```\n"
-                "Now return only the correct implementation of `make_stick` following these rules."""
+                "Now return only the correct implementation of `make_stick` following these rules.'''
         prompt = prompt_addon + prompt
         
         output = llm.generate(prompt, params)
