@@ -61,11 +61,11 @@ class FunSearch:
     def _initialize_model(self):
         """Initialize the model and tokenizer based on model_type."""
         if self.model_type == 'huggingface':
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.model_path,
-                torch_dtype=torch.float16,
-                device_map="auto")
+            # self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+            # self.model = AutoModelForCausalLM.from_pretrained(
+            #     self.model_path,
+            #     torch_dtype=torch.float16,
+            #     device_map="auto")
         else:
             self.model = None
             self.tokenizer = None
