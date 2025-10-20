@@ -182,8 +182,8 @@ print({function_to_run}())
             finally:
                 # Clean up the temporary file
                 if os.path.exists(script_path):
-                    print("ugh")
-                    # os.remove(script_path)
+                    # print("ugh")
+                    os.remove(script_path)
 
 
 def _calls_ancestor(program: str, function_to_evolve: str) -> bool:
