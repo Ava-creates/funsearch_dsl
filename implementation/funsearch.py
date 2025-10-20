@@ -143,7 +143,7 @@ class FunSearch:
             function_to_implement: Name of the function to implement
         """
         specification = self._replace_function_in_specification(specification, function_to_implement, function_init)
-        # print(specification)
+        print(specification)
         function_to_evolve, function_to_run = _extract_function_names(specification)
         template = code_manipulation.text_to_program(specification)
         database = programs_database.ProgramsDatabase(
