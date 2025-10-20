@@ -131,7 +131,7 @@ class FunSearch:
         function_init = self._init_function_from_file(function_init)
         function_init = function_init[function_init.index(":")+1:]
         dedented = textwrap.dedent(function_init)
-        indented_function = textwrap.indent(dedented, '  ')
+        indented_function = textwrap.indent(dedented, '    ')
         return specification + "\n" + function_body + "\n" +indented_function
 
     def run(self, specification: str, inputs: Sequence[Any], config: config_lib.Config, function_to_implement, function_init, spec_file):
