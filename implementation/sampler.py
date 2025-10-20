@@ -137,27 +137,31 @@ class LLM:
     if self.model_type == 'huggingface':
       try:
 
-        prompt_addon = '''Your task:\n"
-                "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
-                "Formatting Requirements (do NOT ignore):\n"
-                "1. Your response MUST begin exactly like this:\n"
-                "   ```python\n"
-                "   def make_stick_vn(env):\n"
-                "2. Only output the complete function implementation inside the code block.\n\n"
-                "Example of correct response format:\n"
-                "```python\n"
-                "def make_stick_vn(env):\n"
-                "    # your implementation here\n"
-                "```\n"
-                "Now return only the correct implementation of `make_stick_vn` following these rules. PLease use thr ight version number'''
+        # prompt_addon = '''Your task:\n"
+        #         "Return a **correct implementation** of the `make_stick` function in Python.\n\n"
+        #         "Formatting Requirements (do NOT ignore):\n"
+        #         "1. Your response MUST begin exactly like this:\n"
+        #         "   ```python\n"
+        #         "   def make_stick_vn(env):\n"
+        #         "2. Only output the complete function implementation inside the code block.\n\n"
+        #         "Example of correct response format:\n"
+        #         "```python\n"
+        #         "def make_stick_vn(env):\n"
+        #         "    # your implementation here\n"
+        #         "```\n"
+        #         "Now return only the correct implementation of `make_stick_vn` following these rules. PLease use the right version number'''
+
+        prompt_addon = "Your task:\nReturn the **body** of the `make_stick_vn` function in Python.\n\nFormatting Requirements (do NOT ignore):\n1. Your response MUST begin exactly like this:\n   ```python\n2. Your response MUST end with a closing triple backtick (```).\n3. DO NOT include the function definition line (`def make_stick_vn(env):`).\n4. DO NOT include any explanations, markdown text, or comments outside the code.\n5. Inside the code block, include only valid Python statements that belong inside the function body.\n6. The code must be properly indented for direct insertion after:\n       def make_stick_vn(env):\n7. Output must contain **only** the code block — no text before or after it."
+
         prompt = prompt_addon + prompt
         
         output = self.llm.generate(prompt, self.params)
         response = output[0].outputs[0].text
         response = response[response.index("```python")+len("```python"):]
         response = response[:response.index("```")]
-        response = response[response.index(":")+1:]
-        response = textwrap.dedent(response).strip()
+        print(response)
+        # response = response[response.index(":")+1:]
+       # response = textwrap.dedent(response).strip()
         return  response
   
       #   inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
