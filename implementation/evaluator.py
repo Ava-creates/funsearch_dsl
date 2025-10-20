@@ -15,6 +15,7 @@
 
 """Class for evaluating programs proposed by the Sampler."""
 import ast
+import textwrap
 from collections.abc import Sequence
 import copy
 from typing import Any
@@ -92,7 +93,8 @@ def _sample_to_program(
 
   program = copy.deepcopy(template)
   evolved_function = program.get_function(function_to_evolve)
-  evolved_function.body = body
+  evolved_function.body = textwrap.indent(textwrap.dedent(body).strip(), "  ")
+ # evolved_function.body = body
   return evolved_function, str(program)
 
 
@@ -180,7 +182,8 @@ print({function_to_run}())
             finally:
                 # Clean up the temporary file
                 if os.path.exists(script_path):
-                    os.remove(script_path)
+                    print("ugh")
+                    # os.remove(script_path)
 
 
 def _calls_ancestor(program: str, function_to_evolve: str) -> bool:

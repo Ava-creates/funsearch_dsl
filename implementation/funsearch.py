@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from typing import Any
 import textwrap
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+# from transformers import AutoTokenizer, AutoModelForCausalLM
 from funsearch.implementation import code_manipulation
 from funsearch.implementation import config as config_lib
 from funsearch.implementation import evaluator
@@ -126,12 +126,12 @@ class FunSearch:
             Modified specification string
         """
         # print(function_name)
-        function_body = self._read_function_from_file(function_name)
+        function_body = self._read_function_from_file(function_name).strip()
         # print(function_body)
         function_init = self._init_function_from_file(function_init)
-        function_init = function_init[function_init.index(":")+1:]
+        function_init = function_init[function_init.index(":")+1:].strip()
         dedented = textwrap.dedent(function_init)
-        indented_function = textwrap.indent(dedented, '    ')
+        indented_function = textwrap.indent(dedented, '  ')
         return specification + "\n" + function_body + "\n" +indented_function
 
     def run(self, specification: str, inputs: Sequence[Any], config: config_lib.Config, function_to_implement, function_init, spec_file):
