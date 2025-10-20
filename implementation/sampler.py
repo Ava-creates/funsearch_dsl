@@ -17,9 +17,9 @@
 from collections.abc import Collection, Sequence
 import numpy as np
 import subprocess
-# from vllm import SamplingParams
-# from vllm import LLM as vLLM
-# from transformers import AutoModelForCausalLM, AutoTokenizer
+from vllm import SamplingParams
+from vllm import LLM as vLLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import requests
 import os
@@ -117,13 +117,13 @@ class LLM:
     self.tokenizer = tokenizer
     self.model_type = model_type
     self.stop_tokens = ["\ndef", "\nclass", "\n#"]
-    # if self.model_type == "huggingface":
-    # #     print("\n=== GPU STATUS (before loading model) ===")
-    # #     subprocess.run(["nvidia-smi"])
-    # #     print("=========================================\n")
-    #     self.llm = vLLM(model="/scratch/avani/gpt",    tensor_parallel_size=4 )
-    #     self.params = SamplingParams(temperature=0.7, max_tokens=15000)
-    #   # local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
+    if self.model_type == "huggingface":
+    #     print("\n=== GPU STATUS (before loading model) ===")
+    #     subprocess.run(["nvidia-smi"])
+    #     print("=========================================\n")
+        self.llm = vLLM(model="/scratch/avani/gpt",    tensor_parallel_size=4 )
+        self.params = SamplingParams(temperature=0.7, max_tokens=15000)
+      # local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
 
       # self.tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
       # self.model = AutoModelForCausalLM.from_pretrained(

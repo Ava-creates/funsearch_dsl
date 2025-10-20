@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from typing import Any
 import textwrap
 import torch
-# from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from funsearch.implementation import code_manipulation
 from funsearch.implementation import config as config_lib
 from funsearch.implementation import evaluator
