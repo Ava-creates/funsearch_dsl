@@ -268,7 +268,7 @@ class Sampler:
     f = 0
     if self.model_type == "gemini":
       client = genai.Client()
-    while n<500:
+    while n<1000:
       prompt = self._database.get_prompt()
       # print(prompt)
       samples = self._llm.draw_samples(prompt.code)
