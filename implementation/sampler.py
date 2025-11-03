@@ -225,9 +225,9 @@ class LLM:
         print(f"Error in Ollama generation: {e}")
         return "return [0]"
 
-  def draw_samples(self, prompt: str) -> Collection[str]:
+  def draw_samples(self, prompt: str, function_name: str) -> Collection[str]:
     """Returns multiple predicted continuations of `prompt`."""
-    return [self._draw_sample(prompt) for _ in range(self._samples_per_prompt)]
+    return [self._draw_sample(prompt, function_name) for _ in range(self._samples_per_prompt)]
 
 
 class Sampler:
