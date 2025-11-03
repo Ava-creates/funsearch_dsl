@@ -112,7 +112,7 @@ def is_reward_hacking_from_body(code_body: str) -> bool:
 class LLM:
   """Language model that predicts continuation of provided source code."""
 
-  def __init__(self, samples_per_prompt: int, model=None, tokenizer=None, model_type='ollama') -> None:
+  def __init__(self, samples_per_prompt: int, model=None, tokenizer=None, model_type='ollama', function_name=None) -> None:
     self._samples_per_prompt = samples_per_prompt
     self.tokenizer = tokenizer
     self.model_type = model_type
@@ -132,11 +132,11 @@ class LLM:
       # torch_dtype=torch.float16,     # for large models like 32B
       # trust_remote_code=True
 
-  def _draw_sample(self, prompt: str) -> str:
+  def _draw_sample(self, prompt: str, function_name: str) -> str:
     """Returns a predicted continuation of `prompt`."""
     if self.model_type == 'huggingface':
       try:
-        prompt_addon = "Your task:\nReturn the **body** of the `make_arrow_vn` function in Python.\n\nFormatting Requirements (do NOT ignore):\n1. Your response MUST begin exactly like this:\n   ```python\n2. Your response MUST end with a closing triple backtick (```).\n3. DO NOT include the function definition line (`def make_arrow_vn(env):`).\n4. DO NOT include any explanations, markdown text, or comments outside the code.\n5. Inside the code block, include only valid Python statements that belong inside the function body.\n6. The code must be properly indented for direct insertion after:\n       def make_arrow_vn(env):\n7. Output must contain **only** the code block — no text before or after it."
+        prompt_addon = f"Your task:\nReturn the **body** of the `{function_name}_vn` function in Python.\n\nFormatting Requirements (do NOT ignore):\n1. Your response MUST begin exactly like this:\n   ```python\n2. Your response MUST end with a closing triple backtick (```).\n3. DO NOT include the function definition line (`def {function_name}_vn(env):`).\n4. DO NOT include any explanations, markdown text, or comments outside the code.\n5. Inside the code block, include only valid Python statements that belong inside the function body.\n6. The code must be properly indented for direct insertion after:\n       def {function_name}_vn(env):\n7. Output must contain **only** the code block — no text before or after it."
         prompt = prompt_addon + prompt
         output = self.llm.generate(prompt, self.params)
         response = output[0].outputs[0].text
@@ -197,12 +197,11 @@ class LLM:
             #gpt-oss:latest
             instruction = (
             "Act as a code completion model. "
-            "Return only the function body of the most recent function definition (after its `def func_vn():` line). "
-            "Do not include the `def func_vn():` line itself. "
-            "Do not generate or suggest earlier versions (e.g., `collect_v0`, `collect_v1`, etc.). "
+            "Return only the function body of the most recent function definition (after its `def {function_name}_vn():` line). "
+            "Do not include the `def {function_name}_vn():` line itself. "
             "Only provide the body of the latest function exactly as written. "
             "Wrap the output inside `$$`. "
-            "Example: `def func_v3():$ return None$` → output should be `$$return None$$`."
+            "Example: `def {function_name}_vn():$ return None$` → output should be `$$return None$$`."
             )
             prompt = f"{prompt}/n/n{instruction}"
           
@@ -246,16 +245,19 @@ class Sampler:
     self._evaluators = evaluators
     self.model_type = model_type
     self._llm = LLM(samples_per_prompt, tokenizer=tokenizer, model_type=model_type)
+    self._function_name = None 
 
   def _get_function_signature(self, function_name: str) -> str:
     """Reads the function signature from the corresponding txt file."""
     try:
+      
       with open(f"{function_name}.txt", 'r') as f:
         lines = f.readlines()
         for i, line in enumerate(lines):
           if line.strip().startswith("@funsearch.evolve"):
             if i + 1 < len(lines):
               return lines[i + 1].strip()
+        self._function_name = function_name
       return f"def {function_name}(env) -> int:"  # Default fallback
     except Exception as e:
       print(f"Error reading function signature: {e}")
@@ -271,7 +273,7 @@ class Sampler:
     while n<1000:
       prompt = self._database.get_prompt()
       # print(prompt)
-      samples = self._llm.draw_samples(prompt.code)
+      samples = self._llm.draw_samples(prompt.code, self._function_name)
       n+=1
       for sample in samples:
         # print(sample)
