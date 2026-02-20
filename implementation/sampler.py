@@ -53,7 +53,29 @@ def extract_code_block(text):
     return match.group(1) if match else None
 
 
+def _normalize_unicode_quotes(text: str) -> str:
+    """Normalize Unicode quotes and other problematic characters to ASCII equivalents."""
+    replacements = {
+        '\u2018': "'",  # Left single quotation mark
+        '\u2019': "'",  # Right single quotation mark
+        '\u201A': "'",  # Single low-9 quotation mark
+        '\u201B': "'",  # Single high-reversed-9 quotation mark
+        '\u201C': '"',  # Left double quotation mark
+        '\u201D': '"',  # Right double quotation mark
+        '\u201E': '"',  # Double low-9 quotation mark
+        '\u201F': '"',  # Double high-reversed-9 quotation mark
+        '\u2032': "'",  # Prime
+        '\u2033': '"',  # Double prime
+    }
+    result = text
+    for unicode_char, ascii_char in replacements.items():
+        result = result.replace(unicode_char, ascii_char)
+    return result
+
+
 def is_reward_hacking_from_body(code_body: str) -> bool:
+    # Normalize Unicode quotes before parsing
+    code_body = _normalize_unicode_quotes(code_body)
     code_wrapped = f"def dummy():\n{textwrap.indent(code_body, '    ')}"
     try:
         tree = ast.parse(code_wrapped)
@@ -112,17 +134,33 @@ def is_reward_hacking_from_body(code_body: str) -> bool:
 class LLM:
   """Language model that predicts continuation of provided source code."""
 
-  def __init__(self, samples_per_prompt: int, model=None, tokenizer=None, model_type='ollama', function_name=None) -> None:
+  def __init__(self, samples_per_prompt: int, model=None, tokenizer=None, model_type='ollama', function_name=None, shared_vllm=None, vllm_lock=None) -> None:
     self._samples_per_prompt = samples_per_prompt
     self.tokenizer = tokenizer
     self.model_type = model_type
     self.stop_tokens = ["\ndef", "\nclass", "\n#"]
+    self.vllm_lock = vllm_lock  # Thread lock for safe concurrent access to shared vLLM
+    self._hf_tokenizer = AutoTokenizer.from_pretrained(
+        "/scratch/avani/gpt",
+        trust_remote_code=True,
+        local_files_only=True,
+    )
+    print("Using HuggingFace tokenizer for prompt token counting (/scratch/avani/gpt)")
     if self.model_type == "huggingface":
-    #     print("\n=== GPU STATUS (before loading model) ===")
-    #     subprocess.run(["nvidia-smi"])
-    #     print("=========================================\n")
-        self.llm = vLLM(model="/scratch/avani/gpt",    tensor_parallel_size=4 )
-        self.params = SamplingParams(temperature=0.7, max_tokens=15000)
+      # Use shared vLLM instance if provided, otherwise create new one
+      if shared_vllm is not None:
+        self.llm = shared_vllm
+        print("Using shared vLLM instance in sampler")
+      else:
+        # Fallback: create new instance if shared_vllm not provided
+        # Use lower memory utilization since multiple jobs may run in parallel
+        self.llm = vLLM(
+            model="/scratch/avani/gpt", 
+            tensor_parallel_size=4,
+            gpu_memory_utilization=0.6  # Reduced to 60% to handle parallel jobs
+        )
+        print("Created new vLLM instance in sampler (shared_vllm not provided) - using reduced memory settings")
+      self.params = SamplingParams(temperature=0.7, max_tokens=35000)
       # local_model_path = "/scratch/avani/qwen"  # from your snapshot_download
 
       # self.tokenizer = AutoTokenizer.from_pretrained(local_model_path, trust_remote_code=True)
@@ -132,17 +170,44 @@ class LLM:
       # torch_dtype=torch.float16,     # for large models like 32B
       # trust_remote_code=True
 
+  def _build_prompt_for_model(self, prompt: str, function_name: str) -> str:
+    """Builds the exact prompt string sent to the model."""
+    if self.model_type == "huggingface":
+      prompt_addon = f"Your task:\nReturn the **body** of the `{function_name}_vn` function in Python.\n\nFormatting Requirements (do NOT ignore):\n1. Your response MUST begin exactly like this:\n   ```python\n2. Your response MUST end with a closing triple backtick (```).\n3. DO NOT include the function definition line (`def {function_name}_vn(env):`).\n4. DO NOT include any explanations, markdown text, or comments outside the code.\n5. Inside the code block, include only valid Python statements that belong inside the function body.\n6. The code must be properly indented for direct insertion after:\n       def {function_name}_vn(env):\n7. Output must contain **only** the code block — no text before or after it."
+      return prompt_addon + prompt
+    if self.model_type == "gemini":
+      return "You must act as a code completion model that is completing the last function. Please only return code that will fit in that function. Do not imports or add the function signature on the top. Return only the code that will be inside the function." + prompt
+    instruction = (
+        "Act as a code completion model. "
+        "Return only the function body of the most recent function definition (after its `def {function_name}_vn():` line). "
+        "Do not include the `def {function_name}_vn():` line itself. "
+        "Only provide the body of the latest function exactly as written. "
+        "Wrap the output inside `$$`. "
+        "Example: `def {function_name}_vn():$ return None$` → output should be `$$return None$$`."
+    )
+    return f"{prompt}/n/n{instruction}"
+
+  def count_prompt_tokens(self, prompt: str, function_name: str) -> int:
+    """Returns /scratch/avani/gpt tokenizer token count for the exact model prompt."""
+    full_prompt = self._build_prompt_for_model(prompt, function_name)
+    return len(self._hf_tokenizer.encode(full_prompt, add_special_tokens=False))
+
   def _draw_sample(self, prompt: str, function_name: str) -> str:
     """Returns a predicted continuation of `prompt`."""
     if self.model_type == 'huggingface':
       try:
-        prompt_addon = f"Your task:\nReturn the **body** of the `{function_name}_vn` function in Python.\n\nFormatting Requirements (do NOT ignore):\n1. Your response MUST begin exactly like this:\n   ```python\n2. Your response MUST end with a closing triple backtick (```).\n3. DO NOT include the function definition line (`def {function_name}_vn(env):`).\n4. DO NOT include any explanations, markdown text, or comments outside the code.\n5. Inside the code block, include only valid Python statements that belong inside the function body.\n6. The code must be properly indented for direct insertion after:\n       def {function_name}_vn(env):\n7. Output must contain **only** the code block — no text before or after it."
-        prompt = prompt_addon + prompt
-        output = self.llm.generate(prompt, self.params)
+        prompt = self._build_prompt_for_model(prompt, function_name)
+        # print(prompt)
+        # Use lock for thread-safe access to shared vLLM instance
+        if self.vllm_lock is not None:
+          with self.vllm_lock:
+            output = self.llm.generate(prompt, self.params)
+        else:
+          output = self.llm.generate(prompt, self.params)
         response = output[0].outputs[0].text
         response = response[response.index("```python")+len("```python"):]
         response = response[:response.index("```")]
-        print(response)
+        # print(response)
         # response = response[response.index(":")+1:]
        # response = textwrap.dedent(response).strip()
         return  response
@@ -195,15 +260,7 @@ class LLM:
       try:
             #qwen2.5-coder:32b
             #gpt-oss:latest
-            instruction = (
-            "Act as a code completion model. "
-            "Return only the function body of the most recent function definition (after its `def {function_name}_vn():` line). "
-            "Do not include the `def {function_name}_vn():` line itself. "
-            "Only provide the body of the latest function exactly as written. "
-            "Wrap the output inside `$$`. "
-            "Example: `def {function_name}_vn():$ return None$` → output should be `$$return None$$`."
-            )
-            prompt = f"{prompt}/n/n{instruction}"
+            prompt = self._build_prompt_for_model(prompt, function_name)
           
             payload = {
               "model": "gpt-oss:latest", 
@@ -239,18 +296,26 @@ class Sampler:
       evaluators: Sequence[evaluator.Evaluator],
       samples_per_prompt: int,
       tokenizer=None,
-      model_type="ollama"
+      model_type="ollama",
+      shared_vllm=None,
+      vllm_lock=None,
+      num_iterations: int = 500
   ) -> None:
     self._database = database
     self._evaluators = evaluators
     self.model_type = model_type
-    self._llm = LLM(samples_per_prompt, tokenizer=tokenizer, model_type=model_type)
-    self._function_name = None 
+    self._llm = LLM(samples_per_prompt, tokenizer=tokenizer, model_type=model_type, shared_vllm=shared_vllm, vllm_lock=vllm_lock)
+    self._function_name = os.path.splitext(os.path.basename(self._evaluators[0]._function_name))[0]
+    # Use round-robin assignment for even distribution of work across evaluators
+    self._evaluator_index = 0
+    self._num_iterations = num_iterations
+    self._logged_first_prompt_tokens = False
+
 
   def _get_function_signature(self, function_name: str) -> str:
     """Reads the function signature from the corresponding txt file."""
+    self._function_name = function_name
     try:
-      
       with open(f"{function_name}.txt", 'r') as f:
         lines = f.readlines()
         for i, line in enumerate(lines):
@@ -270,38 +335,25 @@ class Sampler:
     f = 0
     if self.model_type == "gemini":
       client = genai.Client()
-    while n<1000:
+    while n < self._num_iterations:
       prompt = self._database.get_prompt()
-      # print(prompt)
       samples = self._llm.draw_samples(prompt.code, self._function_name)
       n+=1
       for sample in samples:
-        # print(sample)
-        chosen_evaluator = np.random.choice(self._evaluators)
+        if not self._logged_first_prompt_tokens:
+          prompt_tokens = self._llm.count_prompt_tokens(prompt.code, self._function_name)
+          print(f"[Sampler] First prompt token count: {prompt_tokens}")
+          self._logged_first_prompt_tokens = True
+        # Use round-robin assignment for even distribution across evaluators
+        # This ensures work is split evenly rather than randomly
+        chosen_evaluator = self._evaluators[self._evaluator_index % len(self._evaluators)]
+        self._evaluator_index += 1
         best = chosen_evaluator.analyse(
             sample, prompt.island_id, prompt.version_generated)
-      #   if(best == 1):
-      #     best_samples.append(sample)
-      #   if(len(best_samples) >= 5):
-      #     f = 1
-      #     break
-      # if(f == 1):
-      #   break
-    
-    # # Log best samples to file
-    # if best_samples:
-    #     results_dir = 'results'
-    #     os.makedirs(results_dir, exist_ok=True)
-    #     current_date = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    #     function_name = self._evaluators[0]._function_name
-    #     log_file = os.path.join(results_dir, f'best_samples_{current_date}_{function_name}.log')
-    #     with open(log_file, 'w') as f:
-    #         for i, sample in enumerate(best_samples, 1):
-    #             f.write(f"Best Sample {i}:\n")
-    #             f.write(self._get_function_signature(function_name) + "\n")
-    #             # f.write('    """Generated function for program synthesis."""\n')
-    #             f.write(sample)
-    #             f.write("\n\n")
+      #early stopping
+      if best >= 10:
+        print("early stopping")
+        break
 
 
         

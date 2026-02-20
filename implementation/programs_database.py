@@ -103,6 +103,11 @@ class ProgramsDatabase:
 
     self._last_reset_time: float = time.time()
     
+    # Thread lock for thread-safe database operations
+    # Multiple evaluators may register programs concurrently
+    import threading
+    self._lock = threading.Lock()
+    
     # Initialize logging
     logging.info('Initializing ProgramsDatabase with %d islands', config.num_islands)
     logging.info('Function to evolve: %s', function_to_evolve)
@@ -111,10 +116,12 @@ class ProgramsDatabase:
 
   def get_prompt(self) -> Prompt:
     """Returns a prompt containing implementations from one chosen island."""
-    island_id = np.random.randint(len(self._islands))
-    code, version_generated = self._islands[island_id].get_prompt()
-    logging.info('Generated prompt from island %d, version %d', island_id, version_generated)
-    return Prompt(code, version_generated, island_id)
+    # Thread-safe: multiple samplers may call this concurrently
+    with self._lock:
+      island_id = np.random.randint(len(self._islands))
+      code, version_generated = self._islands[island_id].get_prompt()
+      logging.info('Generated prompt from island %d, version %d', island_id, version_generated)
+      return Prompt(code, version_generated, island_id)
 
   def _register_program_in_island(
       self,
@@ -140,37 +147,39 @@ class ProgramsDatabase:
       scores_per_test: ScoresPerTest,
   ) -> None:
     """Registers `program` in the database."""
-    # Log the program being registered
-    logging.info('Registering program in database: %s', str(program))
-    logging.info('Scores per test: %s', scores_per_test)
-    if island_id is not None:
-      logging.info('Adding to island %d', island_id)
-    else:
-      logging.info('Adding to all islands')
+    # Thread-safe: multiple evaluators may register programs concurrently
+    with self._lock:
+      # Log the program being registered
+      logging.info('Registering program in database: %s', str(program))
+      logging.info('Scores per test: %s', scores_per_test)
+      if island_id is not None:
+        logging.info('Adding to island %d', island_id)
+      else:
+        logging.info('Adding to all islands')
 
-    # Log program details to a JSON file
-    log_entry = {
-        'timestamp': datetime.now().isoformat(),
-        'function_name': program.name,
-        'function_body': program.body,
-        'island_id': island_id,
-        'scores': scores_per_test
-    }
-  
-    # In an asynchronous implementation we should consider the possibility of
-    # registering a program on an island that had been reset after the prompt
-    # was generated. Leaving that out here for simplicity.
-    if island_id is None:
-      # This is a program added at the beginning, so adding it to all islands.
-      for island_id in range(len(self._islands)):
+      # Log program details to a JSON file
+      log_entry = {
+          'timestamp': datetime.now().isoformat(),
+          'function_name': program.name,
+          'function_body': program.body,
+          'island_id': island_id,
+          'scores': scores_per_test
+      }
+    
+      # In an asynchronous implementation we should consider the possibility of
+      # registering a program on an island that had been reset after the prompt
+      # was generated. Leaving that out here for simplicity.
+      if island_id is None:
+        # This is a program added at the beginning, so adding it to all islands.
+        for island_id in range(len(self._islands)):
+          self._register_program_in_island(program, island_id, scores_per_test)
+      else:
         self._register_program_in_island(program, island_id, scores_per_test)
-    else:
-      self._register_program_in_island(program, island_id, scores_per_test)
 
-    # Check whether it is time to reset an island.
-    if (time.time() - self._last_reset_time > self._config.reset_period):
-      self._last_reset_time = time.time()
-      self.reset_islands()
+      # Check whether it is time to reset an island.
+      if (time.time() - self._last_reset_time > self._config.reset_period):
+        self._last_reset_time = time.time()
+        self.reset_islands()
 
   def reset_islands(self) -> None:
     """Resets the weaker half of islands."""

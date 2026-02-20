@@ -51,9 +51,19 @@ class Config:
         can execute in parallel as part of a distributed system.
     samples_per_prompt: How many independently sampled program continuations to
         obtain for each prompt.
+    total_samples: Total number of samples to generate across all samplers.
+        If None, uses num_iterations instead. If set, calculates iterations as:
+        iterations = ceil(total_samples / (num_samplers * samples_per_prompt))
+    num_iterations: Number of iterations per sampler (used if total_samples is None).
+        Default is 500.
+    grid_regeneration_attempts: How many times to retry grid regeneration when the
+        initial pass_check fails (0 disables regeneration).
   """
   programs_database: ProgramsDatabaseConfig = dataclasses.field(
       default_factory=ProgramsDatabaseConfig)
   num_samplers: int = 1
-  num_evaluators: int = 1
+  num_evaluators: int = 2
   samples_per_prompt: int = 2
+  total_samples: int = None  # If set, calculates iterations to achieve this total
+  num_iterations: int = 500  # Used if total_samples is None
+  grid_regeneration_attempts: int = 5

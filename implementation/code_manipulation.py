@@ -146,9 +146,39 @@ class ProgramVisitor(ast.NodeVisitor):
     return Program(preface=self._preface, functions=self._functions)
 
 
+def _normalize_unicode_quotes(text: str) -> str:
+  """Normalize Unicode quotes and other problematic characters to ASCII equivalents.
+  
+  Replaces:
+  - Curly single quotes (U+2018, U+2019) with regular apostrophe (')
+  - Curly double quotes (U+201C, U+201D) with regular double quotes (")
+  - Other common Unicode quote variants
+  """
+  # Unicode quote mappings
+  replacements = {
+    '\u2018': "'",  # Left single quotation mark
+    '\u2019': "'",  # Right single quotation mark (the problematic one)
+    '\u201A': "'",  # Single low-9 quotation mark
+    '\u201B': "'",  # Single high-reversed-9 quotation mark
+    '\u201C': '"',  # Left double quotation mark
+    '\u201D': '"',  # Right double quotation mark
+    '\u201E': '"',  # Double low-9 quotation mark
+    '\u201F': '"',  # Double high-reversed-9 quotation mark
+    '\u2032': "'",  # Prime (minutes)
+    '\u2033': '"',  # Double prime (seconds)
+  }
+  
+  result = text
+  for unicode_char, ascii_char in replacements.items():
+    result = result.replace(unicode_char, ascii_char)
+  return result
+
+
 def text_to_program(text: str) -> Program:
   """Returns Program object by parsing input text using Python AST."""
   try:
+    # Normalize Unicode quotes before parsing
+    text = _normalize_unicode_quotes(text)
     # We assume that the program is composed of some preface (e.g. imports,
     # classes, assignments, ...) followed by a sequence of functions.
     tree = ast.parse(text)
@@ -162,6 +192,8 @@ def text_to_program(text: str) -> Program:
 
 def text_to_function(text: str) -> Function:
   """Returns Function object by parsing input text using Python AST."""
+  # Normalize Unicode quotes before parsing
+  text = _normalize_unicode_quotes(text)
   program = text_to_program(text)
   if len(program.functions) != 1:
     raise ValueError(f'Only one function expected, got {len(program.functions)}'
