@@ -351,7 +351,7 @@ class Sampler:
         best = chosen_evaluator.analyse(
             sample, prompt.island_id, prompt.version_generated)
       #early stopping
-      if best >= 10:
+      if best >= 1025:
         print("early stopping")
         break
 

@@ -243,7 +243,7 @@ class FunSearch:
                         output_path=path,
                         shared_vllm=self.shared_vllm,
                         default_task_name=None,
-                        prompt_path="prompt_specifications/grid_prompt.txt",
+                        prompt_path="prompt_specifications/grid_prompt_old.txt",
                         func_args=arg_list,
                         env_description=env_description,
                         recipes_text=recipes_text,
@@ -460,7 +460,7 @@ class FunSearch:
         # Calculate number of iterations per sampler
         # If total_samples is set, calculate iterations to achieve that total
         # Otherwise use num_iterations
-        if check ==10 :
+        if check >=1500:
             return
         import math
         if config.total_samples is not None:
