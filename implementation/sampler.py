@@ -335,6 +335,7 @@ class Sampler:
     f = 0
     if self.model_type == "gemini":
       client = genai.Client()
+    best = 0 
     while n < self._num_iterations:
       prompt = self._database.get_prompt()
       samples = self._llm.draw_samples(prompt.code, self._function_name)
@@ -344,12 +345,11 @@ class Sampler:
           prompt_tokens = self._llm.count_prompt_tokens(prompt.code, self._function_name)
           print(f"[Sampler] First prompt token count: {prompt_tokens}")
           self._logged_first_prompt_tokens = True
-        # Use round-robin assignment for even distribution across evaluators
-        # This ensures work is split evenly rather than randomly
+
         chosen_evaluator = self._evaluators[self._evaluator_index % len(self._evaluators)]
         self._evaluator_index += 1
-        best = chosen_evaluator.analyse(
-            sample, prompt.island_id, prompt.version_generated)
+        best = max(best, chosen_evaluator.analyse(
+            sample, prompt.island_id, prompt.version_generated))
       #early stopping
       if best >= 1025:
         print("early stopping")
