@@ -675,13 +675,13 @@ class Evaluator:
       elif test_output <= -1:
         invalid_reason = "negative_test_output"
 
-      if _args_ignored:
-        scores_per_test[current_input] = 0
-        z = 0
-      elif invalid_reason is not None:
+      if invalid_reason is not None:
         scores_per_test[current_input] = -1
         invalid_reasons[current_input] = invalid_reason
         z = -1
+      elif _args_ignored:
+        scores_per_test[current_input] = 0
+        z = 0
       else:
         # Pure pass_check / environment reward; no LLM verifier or bonuses
         actual_score = test_output + 0.001 * env_interactions

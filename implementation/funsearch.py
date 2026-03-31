@@ -17,7 +17,10 @@
 import os
 import re
 import ast
+import glob
+import math
 import argparse
+from datetime import datetime
 from collections.abc import Sequence
 from typing import Any
 import textwrap
@@ -29,6 +32,11 @@ from funsearch.implementation import config as config_lib
 from funsearch.implementation import evaluator
 from funsearch.implementation import programs_database
 from funsearch.implementation import sampler
+from src.pipeline.grid_generation import ensure_function_grid_spec
+try:
+    from vllm import LLM as vLLM
+except Exception:
+    vLLM = None
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -70,8 +78,11 @@ class FunSearch:
     def _initialize_shared_vllm(self):
         """Initialize shared vLLM instance for sampler and evaluator."""
         if self.model_type == "huggingface" and self.shared_vllm is None:
+            if vLLM is None:
+                print("Failed to initialize shared vLLM: vLLM not available")
+                self.shared_vllm = None
+                return
             try:
-                from vllm import LLM as vLLM
                 self.shared_vllm = vLLM(
                     model="/scratch/avani/gpt", 
                     tensor_parallel_size=4,
@@ -181,12 +192,6 @@ class FunSearch:
         experiment_dir: str | None = None,
     ) -> bool:
         """Attempt to regenerate grid specs when initial pass_check fails."""
-        try:
-            from src.pipeline.grid_generation import ensure_function_grid_spec
-        except Exception as e:
-            print(f"[grid regen] Skipping: grid_generation not available ({e})")
-            return False
-
         max_attempts = max(0, int(max_attempts))
         if max_attempts <= 0:
             print("[grid regen] Skipping: max_attempts<=0")
@@ -201,14 +206,20 @@ class FunSearch:
 
         grid_paths = self._extract_grid_paths(specification, spec_file)
         if not grid_paths and experiment_dir:
-            try:
-                grids_dir = os.path.join(experiment_dir, "grids")
-                os.makedirs(grids_dir, exist_ok=True)
-                grid_paths = [os.path.join(grids_dir, f"{function_to_evolve}_regen_case{i}.json") for i in range(10)]
-                print(f"[grid regen] No grid paths in spec; generating defaults: {grid_paths[0]} ...")
-            except Exception as e:
-                print(f"[grid regen] Failed to build default grid paths: {e}")
-                grid_paths = []
+            grids_dir = os.path.join(experiment_dir, "grids")
+            os.makedirs(grids_dir, exist_ok=True)
+            base_names = {function_to_evolve, function_to_evolve.lower()}
+            discovered_paths: list[str] = []
+            for base_name in base_names:
+                discovered_paths.extend(
+                    glob.glob(os.path.join(grids_dir, f"{base_name}_dsl*_case*.json"))
+                )
+                discovered_paths.extend(
+                    glob.glob(os.path.join(grids_dir, f"{base_name}_case*.json"))
+                )
+            # Deduplicate while preserving deterministic order.
+            grid_paths = sorted(set(discovered_paths))
+
         if not grid_paths:
             print("[grid regen] No grid paths found in specification")
             return False
@@ -373,7 +384,17 @@ class FunSearch:
         # print("indented_function"+indented_function)
         return specification + "\n" + function_body + "\n" + indented_function
 
-    def run(self, specification: str, inputs: Sequence[Any], config: config_lib.Config, function_to_implement, function_init, spec_file, experiment_dir: str = None):
+    def run(
+        self,
+        specification: str,
+        inputs: Sequence[Any],
+        config: config_lib.Config,
+        function_to_implement,
+        function_init,
+        spec_file,
+        experiment_dir: str = None,
+        grid_lookup_experiment_dir: str | None = None,
+    ):
         """Run the FunSearch experiment.
         Args:
             specification: The specification string containing the functions to evolve and run
@@ -382,7 +403,8 @@ class FunSearch:
             function_to_implement: Name of the function to implement
             function_init: Path to function initialization file
             spec_file: Path to specification file
-            experiment_dir: Optional directory for experiment outputs (for compatibility)
+            experiment_dir: Optional directory for experiment outputs/logs
+            grid_lookup_experiment_dir: Optional experiment root used to find/regenerate grids
         """
         specification = self._replace_function_in_specification(specification, function_to_implement, function_init)
         function_to_evolve, function_to_run = _extract_function_names(specification)
@@ -399,7 +421,6 @@ class FunSearch:
         # Create a shared log file path for all evaluators to use
         shared_log_file = None
         if experiment_dir:
-            from datetime import datetime
             results_dir = experiment_dir
             os.makedirs(results_dir, exist_ok=True)
             
@@ -435,34 +456,33 @@ class FunSearch:
         # We send the initial implementation to be analysed by one of the evaluators.
         initial = template.get_function(function_to_evolve).body
         check = evaluators[0].analyse(initial, island_id=None, version_generated=None)
-        '''
-        regeneration of test cases of the function fails at first attempt 
-        if check == -1:
+
+        # Regenerate grids when the initial implementation fails hard.
+        while check == -1:
             regen_attempts = getattr(config, "grid_regeneration_attempts", 0)
-            regen_attempts = 0 #for testing
             print(f"[init check] Initial implementation failed; regenerating grids (up to {regen_attempts} attempts)")
             for attempt in range(max(0, regen_attempts)):
                 regenerated = self._regenerate_grids_if_needed(
                     specification,
                     spec_file,
                     function_to_evolve,
-                    max_attempts=1,
-                    experiment_dir=experiment_dir,
+                    max_attempts=15,
+                    experiment_dir=(
+                        grid_lookup_experiment_dir
+                        if grid_lookup_experiment_dir is not None
+                        else experiment_dir
+                    ),
                 )
                 if regenerated:
                     check = evaluators[0].analyse(initial, island_id=None, version_generated=None)
                     if check != -1:
                         break
-            if check == -1:
-                print("[init check] Still failing after grid regeneration; stopping.")
-                return
-        '''
+
         # Calculate number of iterations per sampler
         # If total_samples is set, calculate iterations to achieve that total
         # Otherwise use num_iterations
         if check >=1500:
             return
-        import math
         if config.total_samples is not None:
             # Calculate iterations: total_samples / (num_samplers * samples_per_prompt)
             # Each sampler will run this many iterations internally
