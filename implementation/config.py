@@ -58,6 +58,10 @@ class Config:
         Default is 500.
     grid_regeneration_attempts: How many times to retry grid regeneration when the
         initial pass_check fails (0 disables regeneration).
+    grid_prompt_path: Path to the grid LLM prompt template used during regeneration.
+    positive_grids, negative_grids, edge_grids: Passed to grid generation (prompt sizing).
+    skip_positive_grids: If True, positive cases are not requested from the grid LLM.
+    grid_spec_llm_attempts: LLM retries per grid file inside ensure_function_grid_spec.
   """
   programs_database: ProgramsDatabaseConfig = dataclasses.field(
       default_factory=ProgramsDatabaseConfig)
@@ -67,3 +71,9 @@ class Config:
   total_samples: int = None  # If set, calculates iterations to achieve this total
   num_iterations: int = 500  # Used if total_samples is None
   grid_regeneration_attempts: int = 5
+  grid_prompt_path: str = "prompt_specifications/grid_prompt.txt"
+  positive_grids: int = 10
+  negative_grids: int = 4
+  edge_grids: int = 1
+  skip_positive_grids: bool = False
+  grid_spec_llm_attempts: int = 5

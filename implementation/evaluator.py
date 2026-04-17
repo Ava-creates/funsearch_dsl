@@ -299,17 +299,6 @@ else:
                         os.remove(script_path)
                 except OSError:
                     pass
-                # Best-effort cleanup for any stray generated_code_*.py files
-                try:
-                    temp_dir = os.getcwd()
-                    for fname in os.listdir(temp_dir):
-                        if fname.startswith("generated_code_") and fname.endswith(".py"):
-                            try:
-                                os.remove(os.path.join(temp_dir, fname))
-                            except OSError:
-                                pass
-                except OSError:
-                    pass
 
 
 def _calls_ancestor(program: str, function_to_evolve: str) -> bool:
@@ -510,6 +499,11 @@ class Evaluator:
     self._shared_vllm = shared_vllm  # Store shared vLLM instance
     self._vllm_lock = vllm_lock  # Thread lock for safe concurrent access to shared vLLM
     self._results_tracker = results_tracker  # Results tracker for interaction tracking
+    self._last_evaluation_record: dict | None = None  # last analyse() log payload (for grid regen context)
+
+  def get_last_evaluation_record(self) -> dict | None:
+    """Most recent evaluate/analyse log dict (JSON-serializable)."""
+    return self._last_evaluation_record
 
   def _build_log_file_path(self) -> str:
     """Build shared funsearch log path."""
@@ -572,6 +566,7 @@ class Evaluator:
           'syntax_error': True
       }
       self._append_json_line(self._log_file, log_entry)
+      self._last_evaluation_record = log_entry
       self._database.register_program(new_function, island_id, scores_per_test)
       return 0
     if not new_function or not hasattr(new_function, 'body') or not new_function.body or not new_function.body.strip():
@@ -592,6 +587,7 @@ class Evaluator:
           'empty_body': True
       }
       self._append_json_line(self._log_file, log_entry)
+      self._last_evaluation_record = log_entry
       return 0
 
     # Check if the function actually uses its non-env arguments.
@@ -686,7 +682,7 @@ class Evaluator:
         # Pure pass_check / environment reward; no LLM verifier or bonuses
         actual_score = test_output + 0.001 * env_interactions
         scores_per_test[current_input] = actual_score
-        z = actual_score
+        z = test_output
 
       if current_input not in invalid_reasons and scores_per_test.get(current_input) == -1:
         invalid_reasons[current_input] = "reason_not_found"
@@ -708,7 +704,8 @@ class Evaluator:
         'scores': scores_per_test
     }
     self._append_json_line(self._log_file, log_entry)
-    
+    self._last_evaluation_record = log_entry
+
     if scores_per_test:
       self._database.register_program(new_function, island_id, scores_per_test)
 

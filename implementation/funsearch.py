@@ -16,6 +16,7 @@
 """A single-threaded implementation of the FunSearch pipeline."""
 import os
 import re
+import json
 import ast
 import glob
 import math
@@ -39,6 +40,64 @@ except Exception:
     vLLM = None
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+
+def _funsearch_project_root() -> str:
+    """Project root (DSL_Generator) from funsearch/implementation/funsearch.py."""
+    return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _summarize_pass_check_failure(record: dict) -> str:
+    """One-line description of the last evaluate() / pass_check outcome for the grid LLM."""
+    status = record.get("status")
+    if status == "syntax_error":
+        return "syntax_error: the implementation could not be parsed as Python"
+    ir = record.get("invalid_reasons")
+    if isinstance(ir, dict) and ir:
+        return "; ".join(f"{key}: {reason}" for key, reason in ir.items())
+    if record.get("invalid"):
+        return "evaluation failed pass_check"
+    return str(status or "unknown failure")
+
+
+def _format_init_check_failure_for_grid_prompt(record: dict | None) -> str:
+    """Text for <<INIT_CHECK_FAILURE>> in grid prompt (regen only; file gen leaves empty)."""
+    if not record:
+        return ""
+    msg = _summarize_pass_check_failure(record)
+    return (
+        f"\nOn running the pass check we ran into this error before, so be careful: {msg}\n"
+    )
+
+
+def _load_cfg_text_from_experiment_root(experiment_root: str) -> str:
+    cfg_path = os.path.join(experiment_root, "cfg", "cfg_output.json")
+    if not os.path.isfile(cfg_path):
+        return ""
+    with open(cfg_path, encoding="utf-8") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("cfg") or "")
+
+
+def _load_codebase_text_for_grid() -> str:
+    path = os.path.join(_funsearch_project_root(), "prompt_specifications", "codebase.txt")
+    if not os.path.isfile(path):
+        return ""
+    with open(path, encoding="utf-8") as f:
+        return f.read().strip()
+
+
+def _load_existing_grid_cases_except(grid_paths: list[str], skip_path: str) -> list:
+    out: list = []
+    for p in grid_paths:
+        if p == skip_path or not os.path.isfile(p):
+            continue
+        with open(p, encoding="utf-8") as f:
+            out.append(json.load(f))
+    return out
+
 
 # Global lock for thread-safe vLLM access when using shared instances
 _vllm_lock = threading.Lock()
@@ -188,14 +247,19 @@ class FunSearch:
         specification: str,
         spec_file: str | None,
         function_to_evolve: str,
-        max_attempts: int,
+        config: config_lib.Config,
         experiment_dir: str | None = None,
+        init_check_failure: str = "",
     ) -> bool:
         """Attempt to regenerate grid specs when initial pass_check fails."""
-        max_attempts = max(0, int(max_attempts))
-        if max_attempts <= 0:
-            print("[grid regen] Skipping: max_attempts<=0")
-            return False
+        prompt_path = config.grid_prompt_path
+        if not os.path.isabs(prompt_path):
+            prompt_path = os.path.join(_funsearch_project_root(), prompt_path)
+        positive_grids = config.positive_grids
+        negative_grids = config.negative_grids
+        edge_grids = config.edge_grids
+        skip_positive_grids = config.skip_positive_grids
+        llm_attempts = max(1, int(config.grid_spec_llm_attempts))
 
         # Ensure vLLM is available for grid generation
         if self.shared_vllm is None and self.model_type == "huggingface":
@@ -230,40 +294,52 @@ class FunSearch:
         if not arg_list:
             arg_list = "None"
 
-        def _maybe_read(path: str) -> str:
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return f.read().strip()
-            except Exception:
-                return ""
+        proj_root = _funsearch_project_root()
+        nld_path = os.path.join(proj_root, "prompt_specifications", "nld.txt")
+        with open(nld_path, encoding="utf-8") as f:
+            env_description = f.read().strip()
+        recipes_path = os.path.join(proj_root, "craft", "resources", "recipes.yaml")
+        with open(recipes_path, encoding="utf-8") as f:
+            recipes_text = f.read().strip()
 
-        env_description = _maybe_read("prompt_specifications/nld.txt")
-        recipes_text = _maybe_read("craft/resources/recipes.yaml")
+        exp_root = experiment_dir or ""
+        cfg_text = _load_cfg_text_from_experiment_root(exp_root) if exp_root else ""
+        codebase_text = _load_codebase_text_for_grid()
 
         regenerated_any = False
-        for attempt in range(max_attempts):
-            for path in grid_paths:
-                try:
-                    dirpath = os.path.dirname(path)
-                    if dirpath:
-                        os.makedirs(dirpath, exist_ok=True)
-                    ensure_function_grid_spec(
-                        func_name=function_to_evolve,
-                        description=description,
-                        recipes_path="craft/resources/recipes.yaml",
-                        output_path=path,
-                        shared_vllm=self.shared_vllm,
-                        default_task_name=None,
-                        prompt_path="prompt_specifications/grid_prompt_old.txt",
-                        func_args=arg_list,
-                        env_description=env_description,
-                        recipes_text=recipes_text,
-                        attempts=5,
-                    )
-                    regenerated_any = True
-                    print(f"[grid regen] Attempt {attempt + 1}/{max_attempts}: regenerated grid {path}")
-                except Exception as e:
-                    print(f"[grid regen] Attempt {attempt + 1}/{max_attempts}: failed to regenerate {path}: {e}")
+        for path in grid_paths:
+            dirpath = os.path.dirname(path)
+            if dirpath:
+                os.makedirs(dirpath, exist_ok=True)
+            existing_cases = _load_existing_grid_cases_except(grid_paths, path)
+            result = ensure_function_grid_spec(
+                func_name=function_to_evolve,
+                description=description,
+                recipes_path=recipes_path,
+                output_path=path,
+                shared_vllm=self.shared_vllm,
+                default_task_name=None,
+                prompt_path=prompt_path,
+                func_args=arg_list,
+                env_description=env_description,
+                recipes_text=recipes_text,
+                attempts=15,
+                existing_cases=existing_cases if existing_cases else None,
+                cfg_text=cfg_text,
+                codebase_text=codebase_text,
+                require_test_type=True,
+                skip_positive_grids=skip_positive_grids,
+                positive_grids=positive_grids,
+                negative_grids=negative_grids,
+                edge_grids=edge_grids,
+                init_check_failure=init_check_failure or "",
+            )
+            if result is not None:
+                regenerated_any = True
+            print(
+                f"[grid regen] grid {path} (prompt={prompt_path}, +/-/edge={positive_grids}/{negative_grids}/{edge_grids}) "
+                f"ok={result is not None}"
+            )
         return regenerated_any
 
     def _replace_function_in_specification(self, specification: str, function_name: str, function_init:str) -> str:
@@ -459,19 +535,23 @@ class FunSearch:
 
         # Regenerate grids when the initial implementation fails hard.
         while check == -1:
-            regen_attempts = getattr(config, "grid_regeneration_attempts", 0)
+            regen_attempts = max(0, int(config.grid_regeneration_attempts))
             print(f"[init check] Initial implementation failed; regenerating grids (up to {regen_attempts} attempts)")
-            for attempt in range(max(0, regen_attempts)):
+            for attempt in range(regen_attempts):
+                init_note = _format_init_check_failure_for_grid_prompt(
+                    evaluators[0].get_last_evaluation_record()
+                )
                 regenerated = self._regenerate_grids_if_needed(
                     specification,
                     spec_file,
                     function_to_evolve,
-                    max_attempts=15,
+                    config=config,
                     experiment_dir=(
                         grid_lookup_experiment_dir
                         if grid_lookup_experiment_dir is not None
                         else experiment_dir
                     ),
+                    init_check_failure=init_note,
                 )
                 if regenerated:
                     check = evaluators[0].analyse(initial, island_id=None, version_generated=None)
@@ -514,7 +594,7 @@ if __name__ == "__main__":
     parser.add_argument('--spec_file', type=str, required=True, help='Path to specification file')
     parser.add_argument('--func_file', type=str, required=True, help='Func txt file')
     parser.add_argument('--func_init', type=str, required=True, help='the file with start implementatino of the function')
-    parser.add_argument('--model_type', type=str, choices=['huggingface', 'ollama', "gemini"],
+    parser.add_argument('--model_type', type=str, choices=['huggingface', 'ollama', "gemini", "openai_compat"],
                        default='huggingface', help='Choose between huggingface or ollama models')
     args = parser.parse_args()
 

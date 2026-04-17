@@ -23,7 +23,13 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
 import requests
 import os
+import sys
 from datetime import datetime
+
+_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+from src.utils.openai_compat_key import resolve_openai_compat_api_key
 # from google import genai
 from funsearch.implementation import evaluator
 from funsearch.implementation import programs_database
@@ -31,6 +37,7 @@ from funsearch.implementation import programs_database
 import ast
 import textwrap
 import re
+import json
 
 def extract_between_dollars(text: str) -> str:
     """
@@ -251,6 +258,47 @@ class LLM:
 
             return b 
 
+    elif self.model_type == "openai_compat":
+      prompt = self._build_prompt_for_model(prompt, function_name)
+      base_url = os.environ.get("OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca").rstrip("/")
+      api_key = resolve_openai_compat_api_key()
+      model_name = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-4o-mini").strip()
+      chat_path = os.environ.get("OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions").strip()
+      headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+      }
+      payload = {
+        "model": model_name,
+        "messages": [
+          {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 10000,
+        "stream": False,
+      }
+      endpoint = chat_path
+      if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
+        endpoint = f"{base_url}/{endpoint.lstrip('/')}"
+      response = requests.post(
+        endpoint,
+        headers=headers,
+        json=payload,
+        timeout=120,
+      )
+      if response.status_code >= 400:
+        print(f"OpenAI-compatible API error {response.status_code}: {response.text}")
+        return "return [0]"
+      body = response.json()
+      choices = body.get("choices", [])
+      if not choices:
+        print("OpenAI-compatible API returned no choices")
+        return "return [0]"
+      content = choices[0].get("message", {}).get("content", "")
+      if "```python" in content:
+        extracted = extract_code_block(content)
+        return extracted if extracted is not None else content
+      return extract_between_dollars(content)
     else:  # ollama
       print("going in the llm")
       # prompt = "Only return the code completion of the function and nothing outside of this fucntion body followed by '''python tag.\n" + prompt 
@@ -290,6 +338,10 @@ class LLM:
 class Sampler:
   """Node that samples program continuations and sends them for analysis."""
 
+  # Run-level cache shared by all Sampler instances in the same process.
+  _cached_early_stop_target: float | None = None
+  _cached_early_stop_key: tuple[str, ...] | None = None
+
   def __init__(
       self,
       database: programs_database.ProgramsDatabase,
@@ -310,6 +362,76 @@ class Sampler:
     self._evaluator_index = 0
     self._num_iterations = num_iterations
     self._logged_first_prompt_tokens = False
+    self._early_stop_target = self._get_or_compute_early_stop_target()
+    print(f"[Sampler] Early-stop target reward: {self._early_stop_target}")
+
+  def _current_early_stop_key(self) -> tuple[str, ...]:
+    """Stable key for the testcase set used in this sampler run."""
+    if not self._evaluators:
+      return tuple()
+    template_source = str(self._evaluators[0]._template)
+    grid_paths = self._extract_grid_paths_from_template(template_source)
+    return tuple(sorted(str(p) for p in grid_paths))
+
+  def _get_or_compute_early_stop_target(self) -> float:
+    """Compute once per run and reuse across samplers."""
+    current_key = self._current_early_stop_key()
+    if (
+        Sampler._cached_early_stop_target is not None
+        and Sampler._cached_early_stop_key == current_key
+    ):
+      return Sampler._cached_early_stop_target
+
+    target = self._compute_early_stop_target()
+    Sampler._cached_early_stop_target = target
+    Sampler._cached_early_stop_key = current_key
+    return target
+
+  def _extract_grid_paths_from_template(self, template_source: str) -> list[str]:
+    """Extract embedded _grid_spec_paths list from evaluate() source, if present."""
+    match = re.search(r"_grid_spec_paths\s*=\s*(\[[\s\S]*?\])", template_source)
+    if not match:
+      return []
+    try:
+      parsed = ast.literal_eval(match.group(1))
+      if isinstance(parsed, list):
+        return [str(p) for p in parsed]
+    except Exception:
+      return []
+    return []
+
+  def _compute_early_stop_target(self) -> float:
+    """Compute testcase max reward: 100*positive + 1*other.
+
+    Falls back to historical default (1025) when testcase metadata is unavailable.
+    """
+    if not self._evaluators:
+      return 1025.0
+
+    try:
+      template_source = str(self._evaluators[0]._template)
+      grid_paths = self._extract_grid_paths_from_template(template_source)
+      if not grid_paths:
+        return 1025.0
+
+      positive_count = 0
+      other_count = 0
+      for path in grid_paths:
+        try:
+          with open(path, "r", encoding="utf-8") as f:
+            spec = json.load(f)
+          test_type = str(spec.get("test_type", "positive")).lower()
+          if test_type == "positive":
+            positive_count += 1
+          else:
+            other_count += 1
+        except Exception:
+          # Treat unreadable/malformed testcase files as non-positive for conservative thresholding.
+          other_count += 1
+
+      return float(100 * positive_count + 1 * other_count)
+    except Exception:
+      return 1025.0
 
 
   def _get_function_signature(self, function_name: str) -> str:
@@ -351,8 +473,8 @@ class Sampler:
         best = max(best, chosen_evaluator.analyse(
             sample, prompt.island_id, prompt.version_generated))
       #early stopping
-      if best >= 1025:
-        print("early stopping")
+      if best >= self._early_stop_target:
+        print("early stopping with target", self._early_stop_target)
         break
 
 
