@@ -76,6 +76,35 @@ def _normalize_unicode_quotes(text: str) -> str:
   return result
 
 
+def _ensure_body_indentation(generated_code: str) -> str:
+  """Ensures function-body indentation for samples that start at column 0.
+
+  If the first non-empty line is already indented, returns code unchanged.
+  Otherwise, prefixes two spaces to each non-empty line while preserving
+  relative nesting indentation.
+  """
+  lines = generated_code.split('\n')
+  first_non_empty = None
+  for line in lines:
+    if line.strip():
+      first_non_empty = line
+      break
+
+  if first_non_empty is None:
+    return generated_code
+
+  if first_non_empty.startswith(' ') or first_non_empty.startswith('\t'):
+    return generated_code
+
+  adjusted_lines = []
+  for line in lines:
+    if line.strip():
+      adjusted_lines.append(f"  {line}")
+    else:
+      adjusted_lines.append(line)
+  return '\n'.join(adjusted_lines)
+
+
 def _trim_function_body(generated_code: str) -> tuple[str, bool]:
   """Extracts the body of the generated function, trimming anything after it.
   
@@ -86,19 +115,13 @@ def _trim_function_body(generated_code: str) -> tuple[str, bool]:
     return '', False
   # Normalize Unicode quotes before parsing
   generated_code = _normalize_unicode_quotes(generated_code)
+  generated_code = _ensure_body_indentation(generated_code)
   code = f'def fake_function_header():\n{generated_code}'
-  tree = None
-  had_syntax_error = False
-  # We keep trying and deleting code from the end until the parser succeeds.
-  while tree is None:
-    try:
-      tree = ast.parse(code)
-    except SyntaxError as e:
-      print(e)
-      had_syntax_error = True
-      code = '\n'.join(code.splitlines()[:e.lineno - 1])
-  if not code:
-    # Nothing could be saved from `generated_code`
+  try:
+    tree = ast.parse(code)
+    had_syntax_error = False
+  except SyntaxError:
+    had_syntax_error = True
     return '', had_syntax_error
 
   visitor = _FunctionLineVisitor('fake_function_header')

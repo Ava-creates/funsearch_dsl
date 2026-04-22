@@ -26,8 +26,6 @@ from collections.abc import Sequence
 from typing import Any
 import textwrap
 import threading
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
 from funsearch.implementation import code_manipulation
 from funsearch.implementation import config as config_lib
 from funsearch.implementation import evaluator
@@ -119,14 +117,19 @@ def _extract_function_names(specification: str) -> tuple[str, str]:
 class FunSearch:
     """A class that implements the FunSearch pipeline."""
 
-    def __init__(self, model_type: str = 'huggingface', model_path: str = "/scratch/avani/qwen", shared_vllm=None):
+    def __init__(self, model_type: str = 'vllm', model_path: str = "/scratch/avani/qwen", shared_vllm=None):
         """Initialize FunSearch with model configuration.
         Args:
-            model_type: Type of model to use ('huggingface' or 'ollama')
-            model_path: Path to the model (for huggingface models)
+            model_type: Type of model to use ('vllm' or 'openai_compat').
+                        Backward compatible alias: 'huggingface' -> 'vllm'.
+            model_path: Path to the model (kept for compatibility; vLLM path is fixed in code)
             shared_vllm: Optional shared vLLM instance (for compatibility, but not used in sequential mode)
         """
-        self.model_type = model_type
+        self.model_type = "vllm" if model_type == "huggingface" else model_type
+        if self.model_type not in {"vllm", "openai_compat"}:
+            raise ValueError(
+                f"Unsupported model_type={model_type!r}. Allowed: 'vllm' (or alias 'huggingface') and 'openai_compat'."
+            )
         self.model_path = model_path
         self.model = None
         self.tokenizer = None
@@ -136,7 +139,7 @@ class FunSearch:
 
     def _initialize_shared_vllm(self):
         """Initialize shared vLLM instance for sampler and evaluator."""
-        if self.model_type == "huggingface" and self.shared_vllm is None:
+        if self.model_type == "vllm" and self.shared_vllm is None:
             if vLLM is None:
                 print("Failed to initialize shared vLLM: vLLM not available")
                 self.shared_vllm = None
@@ -154,7 +157,7 @@ class FunSearch:
 
     def _initialize_model(self):
         """Initialize the model and tokenizer based on model_type."""
-        if self.model_type == 'huggingface':
+        if self.model_type == 'vllm':
             # self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
             # self.model = AutoModelForCausalLM.from_pretrained(
             #     self.model_path,
@@ -262,7 +265,7 @@ class FunSearch:
         llm_attempts = max(1, int(config.grid_spec_llm_attempts))
 
         # Ensure vLLM is available for grid generation
-        if self.shared_vllm is None and self.model_type == "huggingface":
+        if self.shared_vllm is None and self.model_type == "vllm":
             self._initialize_shared_vllm()
         if self.shared_vllm is None:
             print("[grid regen] Skipping: shared vLLM unavailable")
@@ -488,11 +491,11 @@ class FunSearch:
         database = programs_database.ProgramsDatabase(
             config.programs_database, template, function_to_evolve)
             
-        # Only initialize shared vLLM if not provided and model type is huggingface
+        # Only initialize shared vLLM if not provided and model type is vllm
         # Note: If shared_vllm is None, we try to create one. However, in stages that explicitly
         # want to share an instance (like stage_implement_cfg_single), they should create it first
         # and pass it here to ensure only ONE instance is created and shared.
-        if self.model_type == "huggingface" and self.shared_vllm is None:
+        if self.model_type == "vllm" and self.shared_vllm is None:
             self._initialize_shared_vllm()
         # Create a shared log file path for all evaluators to use
         shared_log_file = None
@@ -506,7 +509,7 @@ class FunSearch:
             safe_function_init = os.path.basename(function_init).replace("/", ":").replace("\\", ":")
             safe_spec = os.path.basename(spec_file) if spec_file else "specification"
             safe_spec = safe_spec.replace("/", "").replace("\\", "")
-            model_name = "huggingface" if self.model_type == "huggingface" else self.model_type
+            model_name = self.model_type
             shared_log_file = os.path.join(results_dir, f'{model_name}_q2.5_{safe_function_name}_{safe_function_init}_{safe_spec}_{current_date}.log')
 
         evaluators = []
@@ -594,8 +597,13 @@ if __name__ == "__main__":
     parser.add_argument('--spec_file', type=str, required=True, help='Path to specification file')
     parser.add_argument('--func_file', type=str, required=True, help='Func txt file')
     parser.add_argument('--func_init', type=str, required=True, help='the file with start implementatino of the function')
-    parser.add_argument('--model_type', type=str, choices=['huggingface', 'ollama', "gemini", "openai_compat"],
-                       default='huggingface', help='Choose between huggingface or ollama models')
+    parser.add_argument(
+        '--model_type',
+        type=str,
+        choices=['vllm', 'huggingface', 'openai_compat'],
+        default='vllm',
+        help="Choose model backend: 'vllm' (or alias 'huggingface') or 'openai_compat'",
+    )
     args = parser.parse_args()
 
     with open(args.spec_file, 'r',  encoding='utf-8') as f:

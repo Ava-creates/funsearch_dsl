@@ -15,16 +15,14 @@
 
 """Class for sampling new programs."""
 from collections.abc import Collection, Sequence
-import numpy as np
-import subprocess
 from vllm import SamplingParams
 from vllm import LLM as vLLM
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
+from transformers import AutoTokenizer
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import os
 import sys
-from datetime import datetime
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _ROOT not in sys.path:
@@ -46,13 +44,16 @@ def extract_between_dollars(text: str) -> str:
     """
     start = text.find("$$")
     if start == -1:
-        text = textwrap.dedent(text).strip()
-        return text
+        # Preserve leading indentation for parser compatibility; trim only line breaks.
+        return text.strip("\r\n")
     end = text.find("$$", start + 2)
     if end == -1:
-        return text
-    
-    return text[start + 2:end].strip()
+        return text.strip("\r\n")
+
+    # IMPORTANT: Do not call .strip() here. It removes leading spaces from the
+    # first code line (e.g., "  x = 1" -> "x = 1"), which causes
+    # "expected an indented block" when evaluator wraps this as a function body.
+    return text[start + 2:end].strip("\r\n")
 
 def extract_code_block(text):
     """Extracts the first Python code block enclosed in triple backticks."""
@@ -141,10 +142,15 @@ def is_reward_hacking_from_body(code_body: str) -> bool:
 class LLM:
   """Language model that predicts continuation of provided source code."""
 
-  def __init__(self, samples_per_prompt: int, model=None, tokenizer=None, model_type='ollama', function_name=None, shared_vllm=None, vllm_lock=None) -> None:
+  def __init__(self, samples_per_prompt: int, model=None, tokenizer=None, model_type='vllm', function_name=None, shared_vllm=None, vllm_lock=None) -> None:
     self._samples_per_prompt = samples_per_prompt
     self.tokenizer = tokenizer
-    self.model_type = model_type
+    # Backward compatibility: existing callers may still pass "huggingface".
+    self.model_type = "vllm" if model_type == "huggingface" else model_type
+    if self.model_type not in {"vllm", "openai_compat"}:
+      raise ValueError(
+          f"Unsupported model_type={model_type!r}. Allowed: 'vllm' (or alias 'huggingface') and 'openai_compat'."
+      )
     self.stop_tokens = ["\ndef", "\nclass", "\n#"]
     self.vllm_lock = vllm_lock  # Thread lock for safe concurrent access to shared vLLM
     self._hf_tokenizer = AutoTokenizer.from_pretrained(
@@ -153,7 +159,7 @@ class LLM:
         local_files_only=True,
     )
     print("Using HuggingFace tokenizer for prompt token counting (/scratch/avani/gpt)")
-    if self.model_type == "huggingface":
+    if self.model_type == "vllm":
       # Use shared vLLM instance if provided, otherwise create new one
       if shared_vllm is not None:
         self.llm = shared_vllm
@@ -179,11 +185,9 @@ class LLM:
 
   def _build_prompt_for_model(self, prompt: str, function_name: str) -> str:
     """Builds the exact prompt string sent to the model."""
-    if self.model_type == "huggingface":
+    if self.model_type == "vllm":
       prompt_addon = f"Your task:\nReturn the **body** of the `{function_name}_vn` function in Python.\n\nFormatting Requirements (do NOT ignore):\n1. Your response MUST begin exactly like this:\n   ```python\n2. Your response MUST end with a closing triple backtick (```).\n3. DO NOT include the function definition line (`def {function_name}_vn(env):`).\n4. DO NOT include any explanations, markdown text, or comments outside the code.\n5. Inside the code block, include only valid Python statements that belong inside the function body.\n6. The code must be properly indented for direct insertion after:\n       def {function_name}_vn(env):\n7. Output must contain **only** the code block — no text before or after it."
       return prompt_addon + prompt
-    if self.model_type == "gemini":
-      return "You must act as a code completion model that is completing the last function. Please only return code that will fit in that function. Do not imports or add the function signature on the top. Return only the code that will be inside the function." + prompt
     instruction = (
         "Act as a code completion model. "
         "Return only the function body of the most recent function definition (after its `def {function_name}_vn():` line). "
@@ -201,7 +205,7 @@ class LLM:
 
   def _draw_sample(self, prompt: str, function_name: str) -> str:
     """Returns a predicted continuation of `prompt`."""
-    if self.model_type == 'huggingface':
+    if self.model_type == 'vllm':
       try:
         prompt = self._build_prompt_for_model(prompt, function_name)
         # print(prompt)
@@ -245,25 +249,15 @@ class LLM:
       except Exception as e:
         print(f"Error in Hugging Face generation: {e}")
         return "return [0]"
-    elif self.model_type == 'gemini':
-            prompt = "You must act as a code completion model that is completing the last function. Please only return code that will fit in that function. Do not imports or add the function signature on the top. Return only the code that will be inside the function." + prompt
-            response = client.models.generate_content(
-                  model="gemini-2.5-flash", contents = prompt
-              )
-
-            b = response.text
-            if "```python" in b:
-              b = extract_code_block(response.text)
-            print("post extract", b)
-
-            return b 
-
-    elif self.model_type == "openai_compat":
+    if self.model_type == "openai_compat":
       prompt = self._build_prompt_for_model(prompt, function_name)
       base_url = os.environ.get("OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca").rstrip("/")
       api_key = resolve_openai_compat_api_key()
-      model_name = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-4o-mini").strip()
+      model_name = os.environ.get("OPENAI_COMPAT_MODEL", "qwen3-235b").strip()
       chat_path = os.environ.get("OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions").strip()
+      timeout_seconds = float(os.environ.get("OPENAI_COMPAT_HTTP_TIMEOUT", "300"))
+      retry_total = int(os.environ.get("OPENAI_COMPAT_MAX_RETRIES", "4"))
+      backoff_factor = float(os.environ.get("OPENAI_COMPAT_BACKOFF_FACTOR", "1.0"))
       headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -280,55 +274,60 @@ class LLM:
       endpoint = chat_path
       if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
         endpoint = f"{base_url}/{endpoint.lstrip('/')}"
-      response = requests.post(
+      print(
+        f"[OpenAICompat][{function_name}] request endpoint={endpoint} "
+        f"model={model_name} timeout={timeout_seconds}s"
+      )
+      retry = Retry(
+        total=retry_total,
+        connect=retry_total,
+        read=retry_total,
+        status=retry_total,
+        backoff_factor=backoff_factor,
+        status_forcelist=(408, 429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["POST"]),
+        raise_on_status=False,
+      )
+      session = requests.Session()
+      adapter = HTTPAdapter(max_retries=retry)
+      session.mount("http://", adapter)
+      session.mount("https://", adapter)
+      response = session.post(
         endpoint,
         headers=headers,
         json=payload,
-        timeout=120,
+        timeout=timeout_seconds,
       )
+      content_type = response.headers.get("Content-Type", "")
+      raw_text = response.text if response.text is not None else ""
       if response.status_code >= 400:
         print(f"OpenAI-compatible API error {response.status_code}: {response.text}")
         return "return [0]"
       body = response.json()
+      if body is None:
+        print("OpenAI-compatible API returned empty JSON body (None)")
+        print(f"OpenAI-compatible API raw response: {response.text[:500]}")
+        return "return [0]"
+      if not isinstance(body, dict):
+        print(f"OpenAI-compatible API returned non-dict JSON body type: {type(body).__name__}")
+        print(f"OpenAI-compatible API raw response: {response.text[:500]}")
+        return "return [0]"
       choices = body.get("choices", [])
       if not choices:
         print("OpenAI-compatible API returned no choices")
         return "return [0]"
-      content = choices[0].get("message", {}).get("content", "")
-      if "```python" in content:
-        extracted = extract_code_block(content)
-        return extracted if extracted is not None else content
+      first_choice = choices[0]
+      message = first_choice.get("message")
+      content = ""
+      if isinstance(message, dict):
+        content = message.get("content", "")
+      elif isinstance(first_choice.get("text"), str):
+        content = first_choice.get("text", "")
+      if not isinstance(content, str):
+        content = str(content)
+      print(extract_between_dollars(content))
       return extract_between_dollars(content)
-    else:  # ollama
-      print("going in the llm")
-      # prompt = "Only return the code completion of the function and nothing outside of this fucntion body followed by '''python tag.\n" + prompt 
-      api_url = "http://129.128.243.184:11434/api/generate"
-      headers = {"Content-Type": "application/json"}
-      # print(prompt)
-      try:
-            #qwen2.5-coder:32b
-            #gpt-oss:latest
-            prompt = self._build_prompt_for_model(prompt, function_name)
-          
-            payload = {
-              "model": "gpt-oss:latest", 
-              "prompt": prompt, 
-              "template": "{{.Prompt}}",
-              "stream": False, 
-              "options": {
-                "num_ctx": 4096, 
-                # "stop": self.stop_tokens
-              }
-            }
-            response = requests.post(api_url, headers=headers, json=payload, timeout=120)
-            # print(response)
-            b = extract_between_dollars(response.json()["response"])
-            b = textwrap.dedent(b).strip()
-            print(b)
-            return b
-      except Exception as e:
-        print(f"Error in Ollama generation: {e}")
-        return "return [0]"
+    raise ValueError(f"Unexpected model_type={self.model_type!r}")
 
   def draw_samples(self, prompt: str, function_name: str) -> Collection[str]:
     """Returns multiple predicted continuations of `prompt`."""
@@ -348,7 +347,7 @@ class Sampler:
       evaluators: Sequence[evaluator.Evaluator],
       samples_per_prompt: int,
       tokenizer=None,
-      model_type="ollama",
+      model_type="vllm",
       shared_vllm=None,
       vllm_lock=None,
       num_iterations: int = 500
@@ -455,8 +454,6 @@ class Sampler:
     n=0
     best_samples=[]
     f = 0
-    if self.model_type == "gemini":
-      client = genai.Client()
     best = 0 
     while n < self._num_iterations:
       prompt = self._database.get_prompt()
