@@ -15,19 +15,26 @@
 
 """Class for sampling new programs."""
 from collections.abc import Collection, Sequence
-from vllm import SamplingParams
-from vllm import LLM as vLLM
-from transformers import AutoTokenizer
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 import os
 import sys
 
+def _import_vllm():
+    from vllm import LLM as vLLM
+    from vllm import SamplingParams
+    return vLLM, SamplingParams
+
+
+def _import_auto_tokenizer():
+    from transformers import AutoTokenizer
+    return AutoTokenizer
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 from src.utils.openai_compat_key import resolve_openai_compat_api_key
+from src.utils.api_openai_compat_walltimes import env_float_openai_compat_scaled
 # from google import genai
 from funsearch.implementation import evaluator
 from funsearch.implementation import programs_database
@@ -153,6 +160,12 @@ class LLM:
       )
     self.stop_tokens = ["\ndef", "\nclass", "\n#"]
     self.vllm_lock = vllm_lock  # Thread lock for safe concurrent access to shared vLLM
+    self.llm = None
+    self.params = None
+    self._hf_tokenizer = None
+    if self.model_type == "openai_compat":
+      return
+    AutoTokenizer = _import_auto_tokenizer()
     self._hf_tokenizer = AutoTokenizer.from_pretrained(
         "/scratch/avani/gpt",
         trust_remote_code=True,
@@ -160,6 +173,7 @@ class LLM:
     )
     print("Using HuggingFace tokenizer for prompt token counting (/scratch/avani/gpt)")
     if self.model_type == "vllm":
+      vLLM, SamplingParams = _import_vllm()
       # Use shared vLLM instance if provided, otherwise create new one
       if shared_vllm is not None:
         self.llm = shared_vllm
@@ -201,6 +215,8 @@ class LLM:
   def count_prompt_tokens(self, prompt: str, function_name: str) -> int:
     """Returns /scratch/avani/gpt tokenizer token count for the exact model prompt."""
     full_prompt = self._build_prompt_for_model(prompt, function_name)
+    if self._hf_tokenizer is None:
+      return max(1, len(full_prompt) // 4)
     return len(self._hf_tokenizer.encode(full_prompt, add_special_tokens=False))
 
   def _draw_sample(self, prompt: str, function_name: str) -> str:
@@ -250,81 +266,28 @@ class LLM:
         print(f"Error in Hugging Face generation: {e}")
         return "return [0]"
     if self.model_type == "openai_compat":
+      from src.utils.openai_compat_http import extract_chat_content, post_chat_completion
+
       prompt = self._build_prompt_for_model(prompt, function_name)
-      base_url = os.environ.get("OPENAI_COMPAT_BASE_URL", "https://llm.vulcan.alliancecan.ca").rstrip("/")
-      api_key = resolve_openai_compat_api_key()
-      model_name = os.environ.get("OPENAI_COMPAT_MODEL", "qwen3-235b").strip()
-      chat_path = os.environ.get("OPENAI_COMPAT_CHAT_PATH", "/api/chat/completions").strip()
-      timeout_seconds = float(os.environ.get("OPENAI_COMPAT_HTTP_TIMEOUT", "300"))
-      retry_total = int(os.environ.get("OPENAI_COMPAT_MAX_RETRIES", "4"))
-      backoff_factor = float(os.environ.get("OPENAI_COMPAT_BACKOFF_FACTOR", "1.0"))
-      headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-      }
-      payload = {
-        "model": model_name,
-        "messages": [
-          {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.7,
-        "max_tokens": 10000,
-        "stream": False,
-      }
-      endpoint = chat_path
-      if not endpoint.startswith("http://") and not endpoint.startswith("https://"):
-        endpoint = f"{base_url}/{endpoint.lstrip('/')}"
+      model_name = os.environ.get("OPENAI_COMPAT_MODEL", "gpt-oss-120b").strip()
+      timeout_seconds = env_float_openai_compat_scaled("OPENAI_COMPAT_HTTP_TIMEOUT", 300.0)
       print(
-        f"[OpenAICompat][{function_name}] request endpoint={endpoint} "
-        f"model={model_name} timeout={timeout_seconds}s"
+        f"[OpenAICompat][{function_name}] request model={model_name} timeout={timeout_seconds}s"
       )
-      retry = Retry(
-        total=retry_total,
-        connect=retry_total,
-        read=retry_total,
-        status=retry_total,
-        backoff_factor=backoff_factor,
-        status_forcelist=(408, 429, 500, 502, 503, 504),
-        allowed_methods=frozenset(["POST"]),
-        raise_on_status=False,
+      status, raw_text, body = post_chat_completion(
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=10000,
+        timeout_seconds=timeout_seconds,
+        label=f"OpenAICompat[{function_name}]",
       )
-      session = requests.Session()
-      adapter = HTTPAdapter(max_retries=retry)
-      session.mount("http://", adapter)
-      session.mount("https://", adapter)
-      response = session.post(
-        endpoint,
-        headers=headers,
-        json=payload,
-        timeout=timeout_seconds,
-      )
-      content_type = response.headers.get("Content-Type", "")
-      raw_text = response.text if response.text is not None else ""
-      if response.status_code >= 400:
-        print(f"OpenAI-compatible API error {response.status_code}: {response.text}")
+      if status >= 400 or body is None:
+        print(f"OpenAI-compatible API error {status}: {raw_text[:500]}")
         return "return [0]"
-      body = response.json()
-      if body is None:
-        print("OpenAI-compatible API returned empty JSON body (None)")
-        print(f"OpenAI-compatible API raw response: {response.text[:500]}")
-        return "return [0]"
-      if not isinstance(body, dict):
-        print(f"OpenAI-compatible API returned non-dict JSON body type: {type(body).__name__}")
-        print(f"OpenAI-compatible API raw response: {response.text[:500]}")
-        return "return [0]"
-      choices = body.get("choices", [])
-      if not choices:
+      content = extract_chat_content(body)
+      if not content:
         print("OpenAI-compatible API returned no choices")
         return "return [0]"
-      first_choice = choices[0]
-      message = first_choice.get("message")
-      content = ""
-      if isinstance(message, dict):
-        content = message.get("content", "")
-      elif isinstance(first_choice.get("text"), str):
-        content = first_choice.get("text", "")
-      if not isinstance(content, str):
-        content = str(content)
       print(extract_between_dollars(content))
       return extract_between_dollars(content)
     raise ValueError(f"Unexpected model_type={self.model_type!r}")
